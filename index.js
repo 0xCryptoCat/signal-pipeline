@@ -391,8 +391,10 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     msg += `PnL ${formatUsd(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
   }
   
-  // Timestamp with hidden signal ID embedded as link (invisible to users)
-  msg += `\n<a href="https://sig:${signal.batchId}-${signal.batchIndex}.com">${formatUtcTime()}</a>`;
+  // Timestamp with hidden signal ID embedded in link (invisible to users)
+  // The # anchor contains the sig ID for dedup parsing if needed
+  const sigId = `${signal.batchId}-${signal.batchIndex}`;
+  msg += `\n<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
   
   return msg;
 }
