@@ -392,6 +392,9 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   }
   
   // Timestamp in UTC italic
+  // Add hidden signal ID for dedup (zero-width space + code)
+  msg += `\n<code>​sig:${signal.batchId}-${signal.batchIndex}</code>`;
+  
   msg += `\n<i>${formatUtcTime()}</i>`;
   
   return msg;
@@ -400,6 +403,70 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
 // ============================================================
 // TELEGRAM API
 // ============================================================
+
+/**
+ * Get the last message sent to a channel/chat
+ * Uses getUpdates with negative offset to get recent messages
+ */
+async function getLastChannelMessage(botToken, chatId) {
+  try {
+    // For channels, we need to use getChat to get pinned, but can't get history
+    // Workaround: Use forwardMessage trick or store in bot's chat
+    // Simplest: Just return null and rely on in-memory + embedded sig ID
+    
+    // Try getChatHistory via Bot API (requires bot to be admin)
+    // This won't work for most setups, so we'll use a different approach
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get last signal IDs we've sent (from recent messages)
+ * Parses the embedded sig:XXXXX code from messages
+ */
+async function getRecentSignalIds(botToken, chatId, chainName) {
+  try {
+    // Unfortunately, Telegram Bot API doesn't allow reading channel history
+    // We'll use /tmp file storage as a workaround (persists in warm lambdas)
+    const fs = await import('fs').then(m => m.promises);
+    const tmpFile = `/tmp/last-signal-${chainName}.txt`;
+    
+    try {
+      const content = await fs.readFile(tmpFile, 'utf8');
+      return new Set(content.split('\n').filter(Boolean));
+    } catch {
+      return new Set();
+    }
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Save signal ID to /tmp (persists across warm invocations)
+ */
+async function saveSignalId(chainName, signalKey) {
+  try {
+    const fs = await import('fs').then(m => m.promises);
+    const tmpFile = `/tmp/last-signal-${chainName}.txt`;
+    
+    // Read existing, add new, keep last 50
+    let existing = [];
+    try {
+      const content = await fs.readFile(tmpFile, 'utf8');
+      existing = content.split('\n').filter(Boolean);
+    } catch { /* file doesn't exist */ }
+    
+    existing.push(signalKey);
+    const toSave = existing.slice(-50).join('\n'); // Keep last 50
+    
+    await fs.writeFile(tmpFile, toSave);
+  } catch (err) {
+    console.log(`   ⚠️ Could not save signal ID: ${err.message}`);
+  }
+}
 
 async function sendTelegramMessage(botToken, chatId, text) {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -494,7 +561,18 @@ async function monitorSignals(config) {
     seenSignals = new Set(), // In-memory dedup (per invocation)
   } = config;
   
+  const chainName = CHAIN_NAMES[chainId] || `Chain${chainId}`;
+  
   console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend}, minScore=${minScore})...`);
+  
+  // Load persisted signal IDs from /tmp (survives warm lambda restarts)
+  const persistedSignals = await getRecentSignalIds(botToken, chatId, chainName);
+  console.log(`   📁 Loaded ${persistedSignals.size} persisted signal IDs from /tmp`);
+  
+  // Merge persisted with in-memory
+  for (const sig of persistedSignals) {
+    seenSignals.add(sig);
+  }
   
   const data = await fetchFilterActivity(chainId, trend, pageSize);
   
@@ -507,8 +585,11 @@ async function monitorSignals(config) {
   for (const activity of sortedActivities) {
     const signalKey = `${activity.batchId}-${activity.batchIndex}`;
     
-    // In-memory dedup
-    if (seenSignals.has(signalKey)) continue;
+    // In-memory + persisted dedup
+    if (seenSignals.has(signalKey)) {
+      console.log(`   ⏭️ Already seen: ${signalKey}`);
+      continue;
+    }
     seenSignals.add(signalKey);
     
     // Skip if too few wallets
@@ -537,6 +618,8 @@ async function monitorSignals(config) {
       if (signalAvgScore <= minScore) {
         console.log(`   ⏭️ Skipping ${activity.id}: avgScore ${signalAvgScore.toFixed(2)} <= ${minScore}`);
         skippedByScore++;
+        // Still persist so we don't re-process on cold start
+        await saveSignalId(chainName, signalKey);
         continue;
       }
       
@@ -547,6 +630,8 @@ async function monitorSignals(config) {
         const result = await sendTelegramMessage(botToken, chatId, msg);
         if (result.ok) {
           console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})`);
+          // Persist signal ID to /tmp for cold start recovery
+          await saveSignalId(chainName, signalKey);
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
         }
