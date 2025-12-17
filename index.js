@@ -346,23 +346,20 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   const rating = signalRating(signalAvgScore);
   
   // Header with rating
-  let msg = `🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'} ${TRENDS[signal.trend] || 'SIGNAL'}</b>  ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
+  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'}</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
   
   // Token info with embedded link
   msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)\n`;
   msg += `<code>${signal.tokenAddress}</code>\n`;
   
   // Chain + Age + DEX links
-  msg += `${signal.chainName} | ${signal.tokenAge} | `;
+  msg += `Age: ${signal.tokenAge} - `;
   msg += `<a href="${dex.dextools}${signal.tokenAddress}">DexT</a> | `;
   msg += `<a href="${dex.dexscreener}${signal.tokenAddress}">DexS</a>\n\n`;
   
   // Signal stats
-  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)} | ${formatUsd(signal.priceAtSignal)}\n`;
-  msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's' : ''} | ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n\n`;
-  
-  // Wallet details header
-  msg += `<b>Signal Wallets:</b>\n`;
+  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)} | ${formatUsd(signal.priceAtSignal)}\n\n`;
+  msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's:' : ':'} | ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
   
   for (const w of walletDetails) {
     const isKol = w.addressInfo?.kolAddress;

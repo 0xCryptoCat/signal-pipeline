@@ -20,7 +20,7 @@
     }
     
     .card {
-      width: 400px;
+      width: 520px;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       border-radius: 16px;
       padding: 24px;
@@ -42,6 +42,12 @@
       margin-bottom: 16px;
     }
     
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
     .chain-badge {
       font-size: 12px;
       font-weight: 600;
@@ -55,17 +61,25 @@
     .chain-badge.bsc { color: #F3BA2F; }
     .chain-badge.base { color: #0052FF; }
     
+    .signal-count {
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.1);
+      padding: 3px 8px;
+      border-radius: 10px;
+    }
+    
     .rating {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
     }
     
     .rating-dot {
-      width: 12px;
-      height: 12px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
     }
     
@@ -75,14 +89,45 @@
     .rating-dot.weak { background: #F97316; }
     .rating-dot.poor { background: #EF4444; }
     
-    .token-info {
+    .token-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
       margin-bottom: 20px;
     }
     
+    .token-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    
+    .token-logo img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    
+    .token-info {
+      flex: 1;
+    }
+    
+    .token-name-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    
     .token-name {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
-      margin-bottom: 4px;
     }
     
     .token-symbol {
@@ -90,98 +135,20 @@
       color: rgba(255,255,255,0.6);
     }
     
-    .chart-container {
-      background: rgba(255,255,255,0.05);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 20px;
-      height: 100px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .chart-placeholder {
-      color: rgba(255,255,255,0.3);
-      font-size: 12px;
-    }
-    
-    /* SVG Sparkline */
-    .sparkline {
-      width: 100%;
-      height: 60px;
-    }
-    
-    .sparkline path {
-      fill: none;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    
-    .sparkline path.solana { stroke: #9945FF; }
-    .sparkline path.ethereum { stroke: #627EEA; }
-    .sparkline path.bsc { stroke: #F3BA2F; }
-    .sparkline path.base { stroke: #0052FF; }
-    
-    .sparkline .area {
-      stroke: none;
-      opacity: 0.2;
-    }
-    
-    .sparkline .area.solana { fill: #9945FF; }
-    
-    .stats {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    
-    .stat {
-      text-align: center;
-    }
-    
-    .stat-value {
-      font-size: 16px;
-      font-weight: 600;
-    }
-    
-    .stat-label {
-      font-size: 10px;
-      color: rgba(255,255,255,0.5);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    .max-gain {
-      text-align: center;
-      padding: 12px;
-      background: rgba(34, 197, 94, 0.1);
-      border-radius: 8px;
-      border: 1px solid rgba(34, 197, 94, 0.3);
-    }
-    
-    .max-gain-value {
-      font-size: 20px;
-      font-weight: 700;
-      color: #22C55E;
-    }
-    
-    .max-gain-label {
-      font-size: 10px;
-      color: rgba(255,255,255,0.5);
-      text-transform: uppercase;
+    .token-address {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      font-family: monospace;
+      margin-top: 4px;
     }
     
     .signal-type {
       display: inline-block;
-      padding: 4px 8px;
+      padding: 4px 10px;
       border-radius: 4px;
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      margin-left: 8px;
     }
     
     .signal-type.buy {
@@ -193,6 +160,97 @@
       background: rgba(239, 68, 68, 0.2);
       color: #EF4444;
     }
+    
+    .chart-container {
+      margin-bottom: 20px;
+      height: 80px;
+      position: relative;
+    }
+    
+    .sparkline {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .sparkline .line {
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    
+    .sparkline .line.solana { stroke: #9945FF; }
+    .sparkline .line.ethereum { stroke: #627EEA; }
+    .sparkline .line.bsc { stroke: #F3BA2F; }
+    .sparkline .line.base { stroke: #0052FF; }
+    
+    /* Entry dots on the chart */
+    .entry-dot {
+      r: 6;
+      stroke-width: 2;
+      stroke: #1a1a2e;
+    }
+    
+    .entry-dot.excellent { fill: #3B82F6; }
+    .entry-dot.good { fill: #22C55E; }
+    .entry-dot.neutral { fill: #9CA3AF; }
+    .entry-dot.weak { fill: #F97316; }
+    .entry-dot.poor { fill: #EF4444; }
+    
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    
+    .stat {
+      text-align: center;
+    }
+    
+    .stat-label {
+      font-size: 10px;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    
+    .stat-value {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .max-gain-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: rgba(34, 197, 94, 0.1);
+      border-radius: 8px;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    
+    .max-gain-row.negative {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    
+    .max-gain-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+      text-transform: uppercase;
+    }
+    
+    .max-gain-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #22C55E;
+    }
+    
+    .max-gain-row.negative .max-gain-value {
+      color: #EF4444;
+    }
   </style>
 </head>
 <body>
@@ -200,9 +258,10 @@
   <!-- Solana - Excellent Rating -->
   <div class="card solana">
     <div class="header">
-      <div>
+      <div class="header-left">
         <span class="chain-badge solana">● Solana</span>
         <span class="signal-type buy">Smart Money BUY</span>
+        <span class="signal-count">3rd signal</span>
       </div>
       <div class="rating">
         <span class="rating-dot excellent"></span>
@@ -210,47 +269,65 @@
       </div>
     </div>
     
-    <div class="token-info">
-      <div class="token-name">Bonk Killer</div>
-      <div class="token-symbol">$BONKKILL</div>
+    <div class="token-row">
+      <div class="token-logo">
+        <img src="https://dd.dexscreener.com/ds-data/tokens/solana/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263.png" alt="BONK">
+      </div>
+      <div class="token-info">
+        <div class="token-name-row">
+          <span class="token-name">Bonk Killer</span>
+          <span class="token-symbol">$BONKKILL</span>
+        </div>
+        <div class="token-address">DezX...B263</div>
+      </div>
     </div>
     
     <div class="chart-container">
-      <svg class="sparkline" viewBox="0 0 300 60">
-        <!-- Area fill -->
-        <path class="area solana" d="M0,50 L30,45 L60,48 L90,30 L120,35 L150,20 L180,25 L210,15 L240,18 L270,10 L300,12 L300,60 L0,60 Z"/>
-        <!-- Line -->
-        <path class="solana" d="M0,50 L30,45 L60,48 L90,30 L120,35 L150,20 L180,25 L210,15 L240,18 L270,10 L300,12"/>
+      <svg class="sparkline" viewBox="0 0 480 70">
+        <!-- Price line -->
+        <path class="line solana" d="M0,55 L40,50 L80,52 L120,35 L160,40 L200,28 L240,32 L280,22 L320,25 L360,18 L400,20 L440,15 L480,12"/>
+        
+        <!-- Entry dots (wallet entries on the chart) -->
+        <circle class="entry-dot excellent" cx="120" cy="35"/>
+        <circle class="entry-dot good" cx="200" cy="28"/>
+        <circle class="entry-dot weak" cx="280" cy="22"/>
+        <circle class="entry-dot good" cx="360" cy="18"/>
+        <circle class="entry-dot excellent" cx="440" cy="15"/>
       </svg>
     </div>
     
-    <div class="stats">
+    <div class="stats-row">
       <div class="stat">
-        <div class="stat-value">$1.3M</div>
         <div class="stat-label">MCap</div>
+        <div class="stat-value">$1.3M</div>
       </div>
       <div class="stat">
-        <div class="stat-value">$45K</div>
         <div class="stat-label">Volume</div>
+        <div class="stat-value">$45K</div>
       </div>
       <div class="stat">
-        <div class="stat-value">5</div>
         <div class="stat-label">Wallets</div>
+        <div class="stat-value">5</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Price</div>
+        <div class="stat-value">$0.00012</div>
       </div>
     </div>
     
-    <div class="max-gain">
-      <div class="max-gain-value">19x (+1,860%)</div>
-      <div class="max-gain-label">Max Gain</div>
+    <div class="max-gain-row">
+      <span class="max-gain-label">Max Gain:</span>
+      <span class="max-gain-value">19x (+1,860%)</span>
     </div>
   </div>
 
   <!-- Ethereum - Good Rating -->
   <div class="card ethereum">
     <div class="header">
-      <div>
+      <div class="header-left">
         <span class="chain-badge ethereum">● Ethereum</span>
         <span class="signal-type buy">Whales BUY</span>
+        <span class="signal-count">1st signal</span>
       </div>
       <div class="rating">
         <span class="rating-dot good"></span>
@@ -258,45 +335,59 @@
       </div>
     </div>
     
-    <div class="token-info">
-      <div class="token-name">Pepe Classic</div>
-      <div class="token-symbol">$PEPEC</div>
+    <div class="token-row">
+      <div class="token-logo">🐸</div>
+      <div class="token-info">
+        <div class="token-name-row">
+          <span class="token-name">Pepe Classic</span>
+          <span class="token-symbol">$PEPEC</span>
+        </div>
+        <div class="token-address">0x6982...f2a1</div>
+      </div>
     </div>
     
     <div class="chart-container">
-      <svg class="sparkline" viewBox="0 0 300 60">
-        <path class="area" style="fill: #627EEA; opacity: 0.2;" d="M0,40 L50,35 L100,42 L150,28 L200,32 L250,20 L300,25 L300,60 L0,60 Z"/>
-        <path style="stroke: #627EEA; fill: none; stroke-width: 2;" d="M0,40 L50,35 L100,42 L150,28 L200,32 L250,20 L300,25"/>
+      <svg class="sparkline" viewBox="0 0 480 70">
+        <path class="line ethereum" d="M0,45 L80,40 L160,48 L240,32 L320,38 L400,25 L480,30"/>
+        
+        <circle class="entry-dot good" cx="160" cy="48"/>
+        <circle class="entry-dot excellent" cx="320" cy="38"/>
+        <circle class="entry-dot good" cx="400" cy="25"/>
       </svg>
     </div>
     
-    <div class="stats">
+    <div class="stats-row">
       <div class="stat">
-        <div class="stat-value">$5.2M</div>
         <div class="stat-label">MCap</div>
+        <div class="stat-value">$5.2M</div>
       </div>
       <div class="stat">
-        <div class="stat-value">$120K</div>
         <div class="stat-label">Volume</div>
+        <div class="stat-value">$120K</div>
       </div>
       <div class="stat">
-        <div class="stat-value">3</div>
         <div class="stat-label">Wallets</div>
+        <div class="stat-value">3</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Price</div>
+        <div class="stat-value">$0.0052</div>
       </div>
     </div>
     
-    <div class="max-gain">
-      <div class="max-gain-value">4.2x (+320%)</div>
-      <div class="max-gain-label">Max Gain</div>
+    <div class="max-gain-row">
+      <span class="max-gain-label">Max Gain:</span>
+      <span class="max-gain-value">4.2x (+320%)</span>
     </div>
   </div>
 
   <!-- BSC - Neutral Rating -->
   <div class="card bsc">
     <div class="header">
-      <div>
+      <div class="header-left">
         <span class="chain-badge bsc">● BSC</span>
         <span class="signal-type buy">Influencers BUY</span>
+        <span class="signal-count">5th signal</span>
       </div>
       <div class="rating">
         <span class="rating-dot neutral"></span>
@@ -304,45 +395,63 @@
       </div>
     </div>
     
-    <div class="token-info">
-      <div class="token-name">SafeMoon 2.0</div>
-      <div class="token-symbol">$SAFEMOON2</div>
+    <div class="token-row">
+      <div class="token-logo">🌙</div>
+      <div class="token-info">
+        <div class="token-name-row">
+          <span class="token-name">SafeMoon 2.0</span>
+          <span class="token-symbol">$SAFEMOON2</span>
+        </div>
+        <div class="token-address">0x42f6...8bc4</div>
+      </div>
     </div>
     
     <div class="chart-container">
-      <svg class="sparkline" viewBox="0 0 300 60">
-        <path class="area" style="fill: #F3BA2F; opacity: 0.2;" d="M0,30 L50,32 L100,28 L150,35 L200,30 L250,33 L300,29 L300,60 L0,60 Z"/>
-        <path style="stroke: #F3BA2F; fill: none; stroke-width: 2;" d="M0,30 L50,32 L100,28 L150,35 L200,30 L250,33 L300,29"/>
+      <svg class="sparkline" viewBox="0 0 480 70">
+        <path class="line bsc" d="M0,35 L80,38 L160,32 L240,40 L320,35 L400,38 L480,34"/>
+        
+        <circle class="entry-dot neutral" cx="80" cy="38"/>
+        <circle class="entry-dot weak" cx="160" cy="32"/>
+        <circle class="entry-dot neutral" cx="240" cy="40"/>
+        <circle class="entry-dot good" cx="320" cy="35"/>
+        <circle class="entry-dot neutral" cx="400" cy="38"/>
+        <circle class="entry-dot weak" cx="440" cy="36"/>
+        <circle class="entry-dot neutral" cx="460" cy="35"/>
       </svg>
     </div>
     
-    <div class="stats">
+    <div class="stats-row">
       <div class="stat">
-        <div class="stat-value">$890K</div>
         <div class="stat-label">MCap</div>
+        <div class="stat-value">$890K</div>
       </div>
       <div class="stat">
-        <div class="stat-value">$23K</div>
         <div class="stat-label">Volume</div>
+        <div class="stat-value">$23K</div>
       </div>
       <div class="stat">
-        <div class="stat-value">7</div>
         <div class="stat-label">Wallets</div>
+        <div class="stat-value">7</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Price</div>
+        <div class="stat-value">$0.00089</div>
       </div>
     </div>
     
-    <div class="max-gain">
-      <div class="max-gain-value">2.1x (+110%)</div>
-      <div class="max-gain-label">Max Gain</div>
+    <div class="max-gain-row">
+      <span class="max-gain-label">Max Gain:</span>
+      <span class="max-gain-value">2.1x (+110%)</span>
     </div>
   </div>
 
-  <!-- Base - Poor Rating -->
+  <!-- Base - Poor Rating (SELL signal) -->
   <div class="card base">
     <div class="header">
-      <div>
+      <div class="header-left">
         <span class="chain-badge base">● Base</span>
         <span class="signal-type sell">Smart Money SELL</span>
+        <span class="signal-count">2nd signal</span>
       </div>
       <div class="rating">
         <span class="rating-dot poor"></span>
@@ -350,36 +459,53 @@
       </div>
     </div>
     
-    <div class="token-info">
-      <div class="token-name">Degen Token</div>
-      <div class="token-symbol">$DEGEN</div>
+    <div class="token-row">
+      <div class="token-logo">
+        <img src="https://dd.dexscreener.com/ds-data/tokens/base/0x4ed4e862860bed51a9570b96d89af5e1b0efefed.png" alt="DEGEN">
+      </div>
+      <div class="token-info">
+        <div class="token-name-row">
+          <span class="token-name">Degen Token</span>
+          <span class="token-symbol">$DEGEN</span>
+        </div>
+        <div class="token-address">0x4ed4...efed</div>
+      </div>
     </div>
     
     <div class="chart-container">
-      <svg class="sparkline" viewBox="0 0 300 60">
-        <path class="area" style="fill: #0052FF; opacity: 0.2;" d="M0,15 L50,20 L100,25 L150,30 L200,38 L250,42 L300,48 L300,60 L0,60 Z"/>
-        <path style="stroke: #0052FF; fill: none; stroke-width: 2;" d="M0,15 L50,20 L100,25 L150,30 L200,38 L250,42 L300,48"/>
+      <svg class="sparkline" viewBox="0 0 480 70">
+        <!-- Downward trend -->
+        <path class="line base" d="M0,15 L80,20 L160,25 L240,32 L320,42 L400,48 L480,55"/>
+        
+        <circle class="entry-dot poor" cx="160" cy="25"/>
+        <circle class="entry-dot poor" cx="280" cy="37"/>
+        <circle class="entry-dot weak" cx="360" cy="45"/>
+        <circle class="entry-dot poor" cx="440" cy="52"/>
       </svg>
     </div>
     
-    <div class="stats">
+    <div class="stats-row">
       <div class="stat">
-        <div class="stat-value">$2.1M</div>
         <div class="stat-label">MCap</div>
+        <div class="stat-value">$2.1M</div>
       </div>
       <div class="stat">
-        <div class="stat-value">$67K</div>
         <div class="stat-label">Volume</div>
+        <div class="stat-value">$67K</div>
       </div>
       <div class="stat">
-        <div class="stat-value">4</div>
         <div class="stat-label">Wallets</div>
+        <div class="stat-value">4</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Price</div>
+        <div class="stat-value">$0.0021</div>
       </div>
     </div>
     
-    <div class="max-gain" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3);">
-      <div class="max-gain-value" style="color: #EF4444;">-45%</div>
-      <div class="max-gain-label">Since Signal</div>
+    <div class="max-gain-row negative">
+      <span class="max-gain-label">Since Signal:</span>
+      <span class="max-gain-value">-45%</span>
     </div>
   </div>
 
