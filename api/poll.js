@@ -7,11 +7,14 @@
  * Environment Variables:
  * - TELEGRAM_BOT_TOKEN: Bot token from @BotFather
  * - TELEGRAM_CHAT_ID: Channel/group ID to post to
+ * - KV_REST_API_URL: Vercel KV REST API URL
+ * - KV_REST_API_TOKEN: Vercel KV REST API token
  */
 
 import {
   monitorSignals,
 } from '../index.js';
+import { getLastSignalId, setLastSignalId } from '../lib/kv.js';
 
 // ============================================================
 // CONFIG - From environment variables
@@ -19,10 +22,7 @@ import {
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-// In-memory signal tracking (resets on cold start, but that's fine for 1-min polling)
-// Signals are tracked by batchId-batchIndex to prevent duplicates
-const seenSignals = new Set();
+const CHAIN_ID = 501; // Solana - default chain for main poll endpoint
 
 /**
  * Main polling handler
@@ -42,17 +42,27 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Get last processed signal ID from KV
+    const lastSignalId = await getLastSignalId(CHAIN_ID);
+    console.log(`📍 Last signal ID for chain ${CHAIN_ID}: ${lastSignalId || 'none'}`);
+    
     // Run the monitor
     const result = await monitorSignals({
-      chainId: 501,           // Solana only for now
+      chainId: CHAIN_ID,      // Solana
       trend: '1',             // BUY signals only
       pageSize: 10,           // Check last 10 signals
       botToken: BOT_TOKEN,
       chatId: CHAT_ID,
       scoreWallets: true,     // Score entry quality
       minWallets: 1,          // Minimum 1 wallet to post
-      seenSignals,            // Track seen signals to avoid duplicates
+      lastSignalId,           // KV-based deduplication
     });
+
+    // Store highest signal ID for next poll
+    if (result.highestSignalId) {
+      await setLastSignalId(CHAIN_ID, result.highestSignalId);
+      console.log(`💾 Stored new highest signal ID: ${result.highestSignalId}`);
+    }
 
     const duration = Date.now() - startTime;
     
@@ -63,7 +73,8 @@ export default async function handler(req, res) {
       timestamp: new Date().toISOString(),
       duration,
       newSignals: result.newSignals,
-      trackedSignals: seenSignals.size,
+      skippedSignals: result.seenSignals,
+      lastSignalId: result.highestSignalId,
     });
 
   } catch (error) {

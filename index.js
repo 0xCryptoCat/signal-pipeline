@@ -358,8 +358,8 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   msg += `<a href="${dex.dexscreener}${signal.tokenAddress}">DexS</a>\n\n`;
   
   // Signal stats
-  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)} | ${formatUsd(signal.priceAtSignal)}\n\n`;
-  msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's:' : ':'} | ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)} | ${formatUsd(signal.priceAtSignal)}\n`;
+  msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
   
   for (const w of walletDetails) {
     const isKol = w.addressInfo?.kolAddress;
@@ -477,6 +477,13 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
 
 /**
  * Main monitor function
+ * 
+ * Deduplication strategy:
+ * 1. KV stores the last processed signal ID per chain
+ * 2. On each poll, we only process signals with ID > lastSignalId
+ * 3. After processing, update lastSignalId to the highest processed
+ * 
+ * Fallback: in-memory Set if KV is not available
  */
 async function monitorSignals(config) {
   const {
@@ -486,26 +493,45 @@ async function monitorSignals(config) {
     botToken,
     chatId,
     scoreWallets = true,
-    minWallets = 3,  // Minimum wallets to post signal
-    seenSignals = new Set(),
+    minWallets = 1,
+    seenSignals = new Set(), // Fallback for in-memory dedup
+    lastSignalId = null,     // From KV, if available
   } = config;
   
   console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend})...`);
+  if (lastSignalId) {
+    console.log(`   📌 Last signal ID: ${lastSignalId}`);
+  }
   
   const data = await fetchFilterActivity(chainId, trend, pageSize);
   
   let newSignals = 0;
+  let highestSignalId = lastSignalId || 0;
   
-  for (const activity of data.activityList) {
+  // Sort by ID descending to process newest first
+  const sortedActivities = [...data.activityList].sort((a, b) => b.id - a.id);
+  
+  for (const activity of sortedActivities) {
+    const signalId = activity.id;
     const signalKey = `${activity.batchId}-${activity.batchIndex}`;
     
-    // Skip if already seen
+    // KV-based dedup: skip if signal ID <= lastSignalId
+    if (lastSignalId && signalId <= lastSignalId) {
+      continue;
+    }
+    
+    // In-memory fallback dedup
     if (seenSignals.has(signalKey)) continue;
     seenSignals.add(signalKey);
     
+    // Track highest signal ID for KV update
+    if (signalId > highestSignalId) {
+      highestSignalId = signalId;
+    }
+    
     // Skip if too few wallets
     if (activity.addressNum < minWallets) {
-      console.log(`   ⏭️ Skipping ${activity.id}: only ${activity.addressNum} wallet(s)`);
+      console.log(`   ⏭️ Skipping ${signalId}: only ${activity.addressNum} wallet(s)`);
       continue;
     }
     
@@ -544,7 +570,11 @@ async function monitorSignals(config) {
   
   console.log(`   📊 Processed ${newSignals} new signal(s)`);
   
-  return { newSignals, seenSignals };
+  return { 
+    newSignals, 
+    seenSignals, 
+    highestSignalId,  // For KV update
+  };
 }
 
 // ============================================================

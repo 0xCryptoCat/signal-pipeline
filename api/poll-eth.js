@@ -1,12 +1,13 @@
 /**
  * Ethereum Signal Polling Endpoint
- * Cron: Every minute at :15 seconds
  */
 
 import { monitorSignals } from '../index.js';
+import { getLastSignalId, setLastSignalId, isKvAvailable } from '../lib/kv.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const CHAIN_ID = 1;
 
 const seenSignals = new Set();
 
@@ -19,8 +20,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    const lastSignalId = await getLastSignalId(CHAIN_ID);
+    
     const result = await monitorSignals({
-      chainId: 1,
+      chainId: CHAIN_ID,
       trend: '1',
       pageSize: 10,
       botToken: BOT_TOKEN,
@@ -28,15 +31,21 @@ export default async function handler(req, res) {
       scoreWallets: true,
       minWallets: 3,
       seenSignals,
+      lastSignalId,
     });
+
+    if (result.highestSignalId && result.highestSignalId > (lastSignalId || 0)) {
+      await setLastSignalId(CHAIN_ID, result.highestSignalId);
+    }
 
     return res.status(200).json({
       ok: true,
       chain: 'ethereum',
-      chainId: 1,
+      chainId: CHAIN_ID,
       duration: Date.now() - startTime,
       newSignals: result.newSignals,
-      tracked: seenSignals.size,
+      lastSignalId: result.highestSignalId,
+      kvEnabled: isKvAvailable(),
     });
   } catch (error) {
     console.error('❌ Ethereum poll error:', error);
