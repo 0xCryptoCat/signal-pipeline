@@ -392,7 +392,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   }
   
   // Timestamp with hidden signal ID embedded as link (invisible to users)
-  msg += `\n<a href="sig:${signal.batchId}-${signal.batchIndex}">${formatUtcTime()}</a>`;
+  msg += `\n<a href="https://sig:${signal.batchId}-${signal.batchIndex}.com">${formatUtcTime()}</a>`;
   
   return msg;
 }
