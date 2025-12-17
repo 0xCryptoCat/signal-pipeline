@@ -1,0 +1,15 @@
+{
+  "name": "signal-pipeline",
+  "version": "1.0.0",
+  "description": "OKX Smart Money Signal Monitor - Posts signals to Telegram",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "test": "node index.js",
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
