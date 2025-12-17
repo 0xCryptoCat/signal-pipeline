@@ -1,8 +1,10 @@
 {
   "version": 2,
   "functions": {
-    "api/poll.js": {
-      "maxDuration": 60
-    }
+    "api/poll.js": { "maxDuration": 60 },
+    "api/poll-solana.js": { "maxDuration": 60 },
+    "api/poll-eth.js": { "maxDuration": 60 },
+    "api/poll-bsc.js": { "maxDuration": 60 },
+    "api/poll-base.js": { "maxDuration": 60 }
   }
 }
