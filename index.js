@@ -112,6 +112,18 @@ function scoreEmoji(score) {
   return '🔴';
 }
 
+/**
+ * Get signal rating based on average wallet score
+ * Uses the -2 to +2 scale with 5 color tiers
+ */
+function signalRating(avgScore) {
+  if (avgScore >= 1.5) return { emoji: '🔵', label: 'Excellent', color: 'blue' };
+  if (avgScore >= 0.5) return { emoji: '🟢', label: 'Good', color: 'green' };
+  if (avgScore >= -0.5) return { emoji: '⚪️', label: 'Neutral', color: 'gray' };
+  if (avgScore >= -1.5) return { emoji: '🟠', label: 'Weak', color: 'orange' };
+  return { emoji: '🔴', label: 'Poor', color: 'red' };
+}
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -318,13 +330,23 @@ function formatUtcTime() {
 
 /**
  * Format a signal for Telegram (HTML)
+ * @param {Object} signal - Signal data
+ * @param {Array} walletDetails - Wallet details with scores
+ * @param {Object} options - Optional: { prevSignal } for token aggregation
  */
-function formatSignalMessage(signal, walletDetails) {
+function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
   const dex = DEX_LINKS[signal.chainId] || DEX_LINKS[501];
   
-  // Header
-  let msg = `🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'} ${TRENDS[signal.trend] || 'SIGNAL'}</b>\n\n`;
+  // Calculate signal average score from wallets
+  const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
+  const signalAvgScore = scoredWallets.length > 0
+    ? scoredWallets.reduce((sum, w) => sum + w.entryScore, 0) / scoredWallets.length
+    : 0;
+  const rating = signalRating(signalAvgScore);
+  
+  // Header with rating
+  let msg = `🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'} ${TRENDS[signal.trend] || 'SIGNAL'}</b>  ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
   
   // Token info with embedded link
   msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)\n`;
