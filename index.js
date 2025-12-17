@@ -617,6 +617,8 @@ async function monitorSignals(config) {
       if (signalAvgScore <= minScore) {
         console.log(`   ⏭️ Skipping ${activity.id}: avgScore ${signalAvgScore.toFixed(2)} <= ${minScore}`);
         skippedByScore++;
+        // Still persist so we don't re-process on cold start
+        await saveSignalId(chainName, signalKey);
         continue;
       }
       
@@ -627,6 +629,8 @@ async function monitorSignals(config) {
         const result = await sendTelegramMessage(botToken, chatId, msg);
         if (result.ok) {
           console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})`);
+          // Persist signal ID to /tmp for cold start recovery
+          await saveSignalId(chainName, signalKey);
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
         }
