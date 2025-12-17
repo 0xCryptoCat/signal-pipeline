@@ -478,12 +478,8 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
 /**
  * Main monitor function
  * 
- * Deduplication strategy:
- * 1. KV stores the last processed signal ID per chain
- * 2. On each poll, we only process signals with ID > lastSignalId
- * 3. After processing, update lastSignalId to the highest processed
- * 
- * Fallback: in-memory Set if KV is not available
+ * Deduplication: in-memory Set (resets on cold start, acceptable)
+ * Filtering: Only post signals with avgScore > minScore (default 0)
  */
 async function monitorSignals(config) {
   const {
@@ -494,48 +490,34 @@ async function monitorSignals(config) {
     chatId,
     scoreWallets = true,
     minWallets = 1,
-    seenSignals = new Set(), // Fallback for in-memory dedup
-    lastSignalId = null,     // From KV, if available
+    minScore = 0,            // Only post signals with avgScore > this
+    seenSignals = new Set(), // In-memory dedup (per invocation)
   } = config;
   
-  console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend})...`);
-  if (lastSignalId) {
-    console.log(`   📌 Last signal ID: ${lastSignalId}`);
-  }
+  console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend}, minScore=${minScore})...`);
   
   const data = await fetchFilterActivity(chainId, trend, pageSize);
   
   let newSignals = 0;
-  let highestSignalId = lastSignalId || 0;
+  let skippedByScore = 0;
   
   // Sort by ID descending to process newest first
   const sortedActivities = [...data.activityList].sort((a, b) => b.id - a.id);
   
   for (const activity of sortedActivities) {
-    const signalId = activity.id;
     const signalKey = `${activity.batchId}-${activity.batchIndex}`;
     
-    // KV-based dedup: skip if signal ID <= lastSignalId
-    if (lastSignalId && signalId <= lastSignalId) {
-      continue;
-    }
-    
-    // In-memory fallback dedup
+    // In-memory dedup
     if (seenSignals.has(signalKey)) continue;
     seenSignals.add(signalKey);
     
-    // Track highest signal ID for KV update
-    if (signalId > highestSignalId) {
-      highestSignalId = signalId;
-    }
-    
     // Skip if too few wallets
     if (activity.addressNum < minWallets) {
-      console.log(`   ⏭️ Skipping ${signalId}: only ${activity.addressNum} wallet(s)`);
+      console.log(`   ⏭️ Skipping ${activity.id}: only ${activity.addressNum} wallet(s)`);
       continue;
     }
     
-    console.log(`   🔔 New signal ${activity.id}: ${data.tokenInfo[activity.tokenKey]?.tokenSymbol || 'Unknown'}`);
+    console.log(`   🔔 Processing signal ${activity.id}: ${data.tokenInfo[activity.tokenKey]?.tokenSymbol || 'Unknown'}`);
     
     try {
       const { signal, walletDetails } = await processSignal(
@@ -545,13 +527,26 @@ async function monitorSignals(config) {
         { scoreWallets }
       );
       
+      // Calculate signal average score BEFORE deciding to post
+      const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
+      const signalAvgScore = scoredWallets.length > 0
+        ? scoredWallets.reduce((sum, w) => sum + w.entryScore, 0) / scoredWallets.length
+        : 0;
+      
+      // Score filter: only post if avgScore > minScore
+      if (signalAvgScore <= minScore) {
+        console.log(`   ⏭️ Skipping ${activity.id}: avgScore ${signalAvgScore.toFixed(2)} <= ${minScore}`);
+        skippedByScore++;
+        continue;
+      }
+      
       // Format and send message
       const msg = formatSignalMessage(signal, walletDetails);
       
       if (botToken && chatId) {
         const result = await sendTelegramMessage(botToken, chatId, msg);
         if (result.ok) {
-          console.log(`   ✅ Posted to Telegram`);
+          console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})`);
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
         }
@@ -568,12 +563,12 @@ async function monitorSignals(config) {
     await sleep(200);
   }
   
-  console.log(`   📊 Processed ${newSignals} new signal(s)`);
+  console.log(`   📊 Processed ${newSignals} new signal(s), skipped ${skippedByScore} by score`);
   
   return { 
     newSignals, 
+    skippedByScore,
     seenSignals, 
-    highestSignalId,  // For KV update
   };
 }
 

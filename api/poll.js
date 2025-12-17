@@ -1,89 +1,58 @@
 /**
- * Vercel API Handler for Signal Polling
+ * Vercel API Handler for Signal Polling (Solana - Default)
  * 
- * Triggered by external cron (cron-job.org) every 1 minute.
+ * Triggered by external cron (cron-job.org).
  * Polls OKX signals, scores wallets, posts to Telegram.
+ * Only posts signals with avgScore > 0 (quality filter).
  * 
- * Environment Variables:
- * - TELEGRAM_BOT_TOKEN: Bot token from @BotFather
- * - TELEGRAM_CHAT_ID: Channel/group ID to post to
- * - KV_REST_API_URL: Vercel KV REST API URL
- * - KV_REST_API_TOKEN: Vercel KV REST API token
+ * No KV required - uses in-memory dedup + score filtering.
  */
 
-import {
-  monitorSignals,
-} from '../index.js';
-import { getLastSignalId, setLastSignalId } from '../lib/kv.js';
-
-// ============================================================
-// CONFIG - From environment variables
-// ============================================================
+import { monitorSignals } from '../index.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const CHAIN_ID = 501; // Solana - default chain for main poll endpoint
+const CHAIN_ID = 501; // Solana
 
-/**
- * Main polling handler
- */
+// In-memory dedup (per instance, resets on cold start - acceptable)
+const seenSignals = new Set();
+
 export default async function handler(req, res) {
   const startTime = Date.now();
   
-  console.log(`\n🚀 Signal poll triggered at ${new Date().toISOString()}`);
+  console.log(`\n🚀 [Solana] Poll triggered at ${new Date().toISOString()}`);
 
-  // Check config
   if (!BOT_TOKEN || !CHAT_ID) {
-    console.error('❌ Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
-    return res.status(500).json({
-      ok: false,
-      error: 'Missing Telegram configuration',
-    });
+    return res.status(500).json({ ok: false, error: 'Missing Telegram config' });
   }
 
   try {
-    // Get last processed signal ID from KV
-    const lastSignalId = await getLastSignalId(CHAIN_ID);
-    console.log(`📍 Last signal ID for chain ${CHAIN_ID}: ${lastSignalId || 'none'}`);
-    
-    // Run the monitor
     const result = await monitorSignals({
-      chainId: CHAIN_ID,      // Solana
-      trend: '1',             // BUY signals only
-      pageSize: 10,           // Check last 10 signals
+      chainId: CHAIN_ID,
+      trend: '1',
+      pageSize: 10,
       botToken: BOT_TOKEN,
       chatId: CHAT_ID,
-      scoreWallets: true,     // Score entry quality
-      minWallets: 1,          // Minimum 1 wallet to post
-      lastSignalId,           // KV-based deduplication
+      scoreWallets: true,
+      minWallets: 1,
+      minScore: 0,           // Only post signals with avgScore > 0
+      seenSignals,           // In-memory dedup
     });
 
-    // Store highest signal ID for next poll
-    if (result.highestSignalId) {
-      await setLastSignalId(CHAIN_ID, result.highestSignalId);
-      console.log(`💾 Stored new highest signal ID: ${result.highestSignalId}`);
-    }
-
     const duration = Date.now() - startTime;
-    
-    console.log(`✅ Poll complete in ${duration}ms - ${result.newSignals} new signal(s)`);
+    console.log(`✅ [Solana] Complete in ${duration}ms - ${result.newSignals} posted, ${result.skippedByScore} filtered`);
 
     return res.status(200).json({
       ok: true,
-      timestamp: new Date().toISOString(),
+      chain: 'Solana',
       duration,
       newSignals: result.newSignals,
-      skippedSignals: result.seenSignals,
-      lastSignalId: result.highestSignalId,
+      skippedByScore: result.skippedByScore,
+      tracked: seenSignals.size,
     });
 
   } catch (error) {
-    console.error('❌ Poll error:', error);
-    
-    return res.status(500).json({
-      ok: false,
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    });
+    console.error('❌ [Solana] Poll error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
   }
 }

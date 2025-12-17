@@ -1,9 +1,10 @@
 /**
- * Ethereum Signal Polling Endpoint
+ * Ethereum Signal Polling - /api/poll-eth
+ * Poll frequency: Every 2 minutes
+ * Only posts signals with avgScore > 0
  */
 
 import { monitorSignals } from '../index.js';
-import { getLastSignalId, setLastSignalId, isKvAvailable } from '../lib/kv.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -13,15 +14,13 @@ const seenSignals = new Set();
 
 export default async function handler(req, res) {
   const startTime = Date.now();
-  console.log(`\n🔵 Ethereum poll at ${new Date().toISOString()}`);
+  console.log(`\n🚀 [Ethereum] Poll at ${new Date().toISOString()}`);
 
   if (!BOT_TOKEN || !CHAT_ID) {
     return res.status(500).json({ ok: false, error: 'Missing Telegram config' });
   }
 
   try {
-    const lastSignalId = await getLastSignalId(CHAIN_ID);
-    
     const result = await monitorSignals({
       chainId: CHAIN_ID,
       trend: '1',
@@ -29,26 +28,23 @@ export default async function handler(req, res) {
       botToken: BOT_TOKEN,
       chatId: CHAT_ID,
       scoreWallets: true,
-      minWallets: 3,
+      minWallets: 1,
+      minScore: 0,
       seenSignals,
-      lastSignalId,
     });
 
-    if (result.highestSignalId && result.highestSignalId > (lastSignalId || 0)) {
-      await setLastSignalId(CHAIN_ID, result.highestSignalId);
-    }
-
+    const duration = Date.now() - startTime;
     return res.status(200).json({
       ok: true,
-      chain: 'ethereum',
-      chainId: CHAIN_ID,
-      duration: Date.now() - startTime,
+      chain: 'Ethereum',
+      duration,
       newSignals: result.newSignals,
-      lastSignalId: result.highestSignalId,
-      kvEnabled: isKvAvailable(),
+      skippedByScore: result.skippedByScore,
+      tracked: seenSignals.size,
     });
+
   } catch (error) {
-    console.error('❌ Ethereum poll error:', error);
-    return res.status(500).json({ ok: false, chain: 'ethereum', error: error.message });
+    console.error('❌ [Ethereum] Error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
   }
 }
