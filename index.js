@@ -9,6 +9,18 @@
  */
 
 // ============================================================
+// DB INTEGRATION (optional)
+// ============================================================
+
+import {
+  storeSignalData,
+  isSignalSeen,
+  getTokenEnhancement,
+  getWalletEnhancement,
+  initializeDB,
+} from './lib/db-integration.js';
+
+// ============================================================
 // CONSTANTS
 // ============================================================
 
@@ -546,6 +558,7 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
  * 
  * Deduplication: in-memory Set (resets on cold start, acceptable)
  * Filtering: Only post signals with avgScore > minScore (default 0)
+ * DB Storage: When useDB=true, stores signals/tokens/wallets to Telegram channels
  */
 async function monitorSignals(config) {
   const {
@@ -558,11 +571,23 @@ async function monitorSignals(config) {
     minWallets = 1,
     minScore = 0,            // Only post signals with avgScore > this
     seenSignals = new Set(), // In-memory dedup (per invocation)
+    useDB = false,           // Enable Telegram DB storage
   } = config;
   
   const chainName = CHAIN_NAMES[chainId] || `Chain${chainId}`;
   
-  console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend}, minScore=${minScore})...`);
+  console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend}, minScore=${minScore}, db=${useDB})...`);
+  
+  // Initialize DB if enabled
+  let db = null;
+  if (useDB && botToken) {
+    try {
+      db = await initializeDB(botToken, chainId);
+      console.log(`   💾 DB initialized for ${chainName}`);
+    } catch (err) {
+      console.warn(`   ⚠️ DB init failed, continuing without DB: ${err.message}`);
+    }
+  }
   
   // Load persisted signal IDs from /tmp (survives warm lambda restarts)
   const persistedSignals = await getRecentSignalIds(botToken, chatId, chainName);
@@ -631,6 +656,15 @@ async function monitorSignals(config) {
           console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})`);
           // Persist signal ID to /tmp for cold start recovery
           await saveSignalId(chainName, signalKey);
+          
+          // Store to Telegram DB for tracking (if enabled)
+          if (db) {
+            try {
+              await storeSignalData(db, signal, walletDetails, signalAvgScore);
+            } catch (dbErr) {
+              console.warn(`   ⚠️ DB store failed (non-fatal): ${dbErr.message}`);
+            }
+          }
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
         }

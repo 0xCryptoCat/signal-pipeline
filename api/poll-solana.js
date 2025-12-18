@@ -2,6 +2,7 @@
  * Solana Signal Polling - /api/poll-solana
  * Poll frequency: Every 1 minute (highest activity)
  * Only posts signals with avgScore > 0
+ * Stores signals to Telegram DB for tracking
  */
 
 import { monitorSignals } from '../index.js';
@@ -9,12 +10,13 @@ import { monitorSignals } from '../index.js';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const CHAIN_ID = 501;
+const USE_DB = process.env.USE_TELEGRAM_DB === 'true'; // Enable via env var
 
 const seenSignals = new Set();
 
 export default async function handler(req, res) {
   const startTime = Date.now();
-  console.log(`\n🚀 [Solana] Poll at ${new Date().toISOString()}`);
+  console.log(`\n🚀 [Solana] Poll at ${new Date().toISOString()} (db=${USE_DB})`);
 
   if (!BOT_TOKEN || !CHAT_ID) {
     return res.status(500).json({ ok: false, error: 'Missing Telegram config' });
@@ -31,6 +33,7 @@ export default async function handler(req, res) {
       minWallets: 1,
       minScore: 0,
       seenSignals,
+      useDB: USE_DB,
     });
 
     const duration = Date.now() - startTime;
@@ -41,6 +44,7 @@ export default async function handler(req, res) {
       newSignals: result.newSignals,
       skippedByScore: result.skippedByScore,
       tracked: seenSignals.size,
+      dbEnabled: USE_DB,
     });
 
   } catch (error) {
