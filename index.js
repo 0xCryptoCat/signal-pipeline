@@ -18,6 +18,8 @@ import {
   getTokenEnhancement,
   getWalletEnhancement,
   initializeDB,
+  getSeenSignalsFromDB,
+  pinIndexAfterUpdate,
 } from './lib/db-integration.js';
 
 // ============================================================
@@ -578,12 +580,21 @@ async function monitorSignals(config) {
   
   console.log(`\n📡 Polling signals (chain=${chainId}, trend=${trend}, minScore=${minScore}, db=${useDB})...`);
   
-  // Initialize DB if enabled
+  // Initialize DB if enabled (also loads index from pinned message for dedup)
   let db = null;
   if (useDB && botToken) {
     try {
       db = await initializeDB(botToken, chainId);
       console.log(`   💾 DB initialized for ${chainName}`);
+      
+      // Merge DB seen signals into seenSignals set (survives cold starts!)
+      const dbSeenSignals = getSeenSignalsFromDB(db);
+      for (const sig of dbSeenSignals) {
+        // Convert DB key format (batchId_batchIndex) to our format (batchId-batchIndex)
+        const converted = sig.replace('_', '-');
+        seenSignals.add(converted);
+      }
+      console.log(`   💾 Loaded ${dbSeenSignals.size} seen signals from DB index`);
     } catch (err) {
       console.warn(`   ⚠️ DB init failed, continuing without DB: ${err.message}`);
     }
@@ -609,7 +620,7 @@ async function monitorSignals(config) {
   for (const activity of sortedActivities) {
     const signalKey = `${activity.batchId}-${activity.batchIndex}`;
     
-    // In-memory + persisted dedup
+    // In-memory + persisted + DB dedup
     if (seenSignals.has(signalKey)) {
       console.log(`   ⏭️ Already seen: ${signalKey}`);
       continue;
@@ -679,6 +690,11 @@ async function monitorSignals(config) {
     }
     
     await sleep(200);
+  }
+  
+  // Pin index after batch for cold start recovery
+  if (db && newSignals > 0) {
+    await pinIndexAfterUpdate(db);
   }
   
   console.log(`   📊 Processed ${newSignals} new signal(s), skipped ${skippedByScore} by score`);
