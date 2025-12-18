@@ -346,11 +346,12 @@ function formatUtcTime() {
  * Format a signal for Telegram (HTML)
  * @param {Object} signal - Signal data
  * @param {Array} walletDetails - Wallet details with scores
- * @param {Object} options - Optional: { prevSignal } for token aggregation
+ * @param {Object} options - Optional: { tokenHistory } from DB for repeat signals
  */
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
   const dex = DEX_LINKS[signal.chainId] || DEX_LINKS[501];
+  const { tokenHistory } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -363,7 +364,22 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'}</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
   
   // Token info with embedded link
-  msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)\n`;
+  msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)`;
+  
+  // Add signal count if token seen before
+  if (tokenHistory && tokenHistory.signalCount > 0) {
+    const count = tokenHistory.signalCount;
+    const priceChange = tokenHistory.firstPrice > 0 
+      ? ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100)
+      : 0;
+    const priceEmoji = priceChange >= 100 ? '🚀' : priceChange >= 0 ? '📈' : '📉';
+    msg += ` 🔄 <b>${count + 1}x</b>`;
+    if (count > 0 && Math.abs(priceChange) >= 10) {
+      msg += ` ${priceEmoji}${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(0)}%`;
+    }
+  }
+  msg += '\n';
+  
   msg += `<code>${signal.tokenAddress}</code>\n`;
   
   // Chain + Age + DEX links
@@ -658,8 +674,14 @@ async function monitorSignals(config) {
         continue;
       }
       
+      // Get token history for repeat signal indicator
+      let tokenHistory = null;
+      if (db) {
+        tokenHistory = getTokenEnhancement(db, signal.tokenAddress);
+      }
+      
       // Format and send message
-      const msg = formatSignalMessage(signal, walletDetails);
+      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory });
       
       if (botToken && chatId) {
         const result = await sendTelegramMessage(botToken, chatId, msg);
