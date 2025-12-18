@@ -14,6 +14,8 @@
 
 import {
   storeSignalData,
+  updateTokenMsgId,
+  getTokenLastMsgId,
   isSignalSeen,
   getTokenEnhancement,
   getWalletEnhancement,
@@ -89,15 +91,21 @@ function parseTokenKey(tokenKey) {
   return { chainId: parseInt(parts[0]), tokenAddress: parts[1] };
 }
 
-function formatUsd(num) {
+function formatUsd(num, showSign = false) {
   const n = parseFloat(num);
   if (isNaN(n)) return '$0';
-  const sign = n < 0 ? '-' : '+';
+  const sign = showSign ? (n < 0 ? '-' : '+') : (n < 0 ? '-' : '');
   const absN = Math.abs(n);
   if (absN >= 1_000_000) return `${sign}$${(absN / 1_000_000).toFixed(1)}M`;
   if (absN >= 1_000) return `${sign}$${(absN / 1_000).toFixed(1)}K`;
   if (absN >= 1) return `${sign}$${absN.toFixed(0)}`;
-  return `${sign}$${absN.toFixed(2)}`;
+  if (absN >= 0.01) return `${sign}$${absN.toFixed(2)}`;
+  if (absN >= 0.0001) return `${sign}$${absN.toFixed(4)}`;
+  return `${sign}$${absN.toPrecision(3)}`;
+}
+
+function formatPnl(num) {
+  return formatUsd(num, true); // PnL always shows +/-
 }
 
 function formatPct(num) {
@@ -232,7 +240,14 @@ async function fetchCandles(chainId, tokenAddress, limit = 300) {
 }
 
 // ============================================================
-// SCORING (Simplified - no recalculation of OKX metrics)
+// SCORING (Relative Entry Timing - Before/After Context)
+// 
+// Scores range from -2 to +2:
+// +2: Bought the dip, price mooned after (excellent timing)
+// +1: Good entry, price pumped after
+//  0: Neutral entry
+// -1: Poor entry, bought pump, price dipped after
+// -2: Terrible entry, bought pump, price dumped after
 // ============================================================
 
 function classifyBefore(entryPrice, beforeMin, beforeMax) {
@@ -361,7 +376,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   const rating = signalRating(signalAvgScore);
   
   // Header with rating
-  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || 'Signal'}</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
+  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
   
   // Token info with embedded link
   msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)`;
@@ -387,8 +402,8 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   msg += `<a href="${dex.dextools}${signal.tokenAddress}">DexT</a> | `;
   msg += `<a href="${dex.dexscreener}${signal.tokenAddress}">DexS</a>\n\n`;
   
-  // Signal stats
-  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)} | ${formatUsd(signal.priceAtSignal)}\n`;
+  // Signal stats (MCap, Vol - no price, redundant with DEX links)
+  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
   msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
   
   for (const w of walletDetails) {
@@ -404,10 +419,11 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     // Entry score inline
     if (w.entryScore !== undefined) {
-      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)} avg`;
-      if (w.entryScore >= 0.5) {
+      msg += ` [${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
+      if (w.entryScore >= 1.5) {
         msg += ` ✨`;
       }
+      msg += `]`;
     }
     
     // KOL badge
@@ -417,8 +433,8 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     msg += '\n';
     
-    // OKX metrics on next line
-    msg += `PnL ${formatUsd(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
+    // OKX metrics on next line (PnL uses signed format)
+    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
   }
   
   // Timestamp with hidden signal ID embedded in link (invisible to users)
@@ -497,18 +513,26 @@ async function saveSignalId(chainName, signalKey) {
   }
 }
 
-async function sendTelegramMessage(botToken, chatId, text) {
+async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null) {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  
+  const body = {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+  
+  // Reply to previous message if provided (for chaining signals)
+  if (replyToMsgId) {
+    body.reply_to_message_id = replyToMsgId;
+    body.allow_sending_without_reply = true; // Don't fail if original deleted
+  }
   
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(body),
   });
   
   return res.json();
@@ -676,17 +700,21 @@ async function monitorSignals(config) {
       
       // Get token history for repeat signal indicator
       let tokenHistory = null;
+      let replyToMsgId = null;
       if (db) {
         tokenHistory = getTokenEnhancement(db, signal.tokenAddress);
+        // Get previous message ID for reply chaining
+        replyToMsgId = getTokenLastMsgId(db, signal.tokenAddress);
       }
       
-      // Format and send message
+      // Format and send message (reply to previous signal for same token)
       const msg = formatSignalMessage(signal, walletDetails, { tokenHistory });
       
       if (botToken && chatId) {
-        const result = await sendTelegramMessage(botToken, chatId, msg);
+        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId);
         if (result.ok) {
-          console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})`);
+          const replyInfo = replyToMsgId ? ` (reply to ${replyToMsgId})` : '';
+          console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
           // Persist signal ID to /tmp for cold start recovery
           await saveSignalId(chainName, signalKey);
           
@@ -694,6 +722,8 @@ async function monitorSignals(config) {
           if (db) {
             try {
               await storeSignalData(db, signal, walletDetails, signalAvgScore);
+              // Store the message ID for future reply chaining
+              await updateTokenMsgId(db, signal.tokenAddress, result.result.message_id);
             } catch (dbErr) {
               console.warn(`   ⚠️ DB store failed (non-fatal): ${dbErr.message}`);
             }

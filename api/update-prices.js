@@ -31,16 +31,23 @@ const THRESHOLDS = {
 // Only post updates for signals newer than this
 const MAX_SIGNAL_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-async function sendTelegramMessage(text) {
+async function sendTelegramMessage(text, replyToMsgId = null) {
+  const body = {
+    chat_id: CHAT_ID,
+    text,
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+  };
+  
+  // Reply to original signal message if provided
+  if (replyToMsgId) {
+    body.reply_to_message_id = replyToMsgId;
+  }
+  
   const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
@@ -58,8 +65,8 @@ function formatPerformanceMessage(token, currentPrice, multiplier, chainKey) {
   msg += `🪙 <b>${token.sym}</b> #${chainKey}\n`;
   msg += `Entry: $${entryPrice.toPrecision(4)} → Now: $${currentPrice.toPrecision(4)}\n`;
   msg += `<b>+${pctGain}% (${multiplier.toFixed(2)}x)</b>\n\n`;
-  msg += `📊 ${token.scnt} signal${token.scnt > 1 ? 's' : ''} | Avg score: ${avgScore}\n`;
-  msg += `⏱️ First signal: ${signalAge}h ago`;
+  msg += `${token.scnt} signal${token.scnt > 1 ? 's' : ''} | Avg: ${avgScore}\n`; // TODO: needs colored emoji for score
+  msg += `1st signal: ${signalAge}h ago`;
   
   return msg;
 }
@@ -116,10 +123,12 @@ async function processChain(chain) {
     if (signalAge <= MAX_SIGNAL_AGE_MS && !token.postedPerf) {
       if (multiplier >= THRESHOLDS.GOOD) {
         const msg = formatPerformanceMessage(token, priceData.priceUsd, multiplier, chain.key);
-        const result = await sendTelegramMessage(msg);
+        // Reply to the original signal message if we have the msgId
+        const result = await sendTelegramMessage(msg, token.msgId || null);
         
         if (result.ok) {
-          console.log(`   🚀 Posted performance update: ${token.sym} +${((multiplier-1)*100).toFixed(0)}%`);
+          const replyInfo = token.msgId ? ` (reply to msg ${token.msgId})` : '';
+          console.log(`   🚀 Posted performance update: ${token.sym} +${((multiplier-1)*100).toFixed(0)}%${replyInfo}`);
           token.postedPerf = multiplier >= THRESHOLDS.MOON ? 'moon' : 
                              multiplier >= THRESHOLDS.ROCKET ? 'rocket' : 'good';
           posted++;
