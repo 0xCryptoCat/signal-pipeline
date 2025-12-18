@@ -15,10 +15,10 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // All chains to process
 const CHAINS = [
-  { id: 501, name: 'Solana', key: 'sol' },
-  { id: 1, name: 'Ethereum', key: 'eth' },
-  { id: 56, name: 'BSC', key: 'bsc' },
-  { id: 8453, name: 'Base', key: 'base' },
+  { id: 501, name: 'Solana', tag: 'solana' },
+  { id: 1, name: 'Ethereum', tag: 'ethereum' },
+  { id: 56, name: 'BSC', tag: 'bsc' },
+  { id: 8453, name: 'Base', tag: 'base' },
 ];
 
 // Performance thresholds for posting updates
@@ -52,26 +52,51 @@ async function sendTelegramMessage(text, replyToMsgId = null) {
   return res.json();
 }
 
-function formatPerformanceMessage(token, currentPrice, multiplier, chainKey) {
-  const emoji = multiplier >= THRESHOLDS.MOON ? '🚀🌙' : 
+/**
+ * Format a single token line for the aggregated performance message
+ * 
+ * Shows: best entry price → peak price reached (multiplier)
+ * Best entry = lowest price signal for this token
+ * Peak = highest price seen since that signal
+ */
+function formatTokenLine(performer) {
+  const { token, bestEntry, peakPrice, multiplier, chainTag } = performer;
+  
+  const emoji = multiplier >= THRESHOLDS.MOON ? '🌙' : 
                 multiplier >= THRESHOLDS.ROCKET ? '🚀' : '📈';
   
   const pctGain = ((multiplier - 1) * 100).toFixed(0);
-  const entryPrice = token.p0 || 0;
-  const signalAge = token.firstSeen ? Math.floor((Date.now() - token.firstSeen) / 3600000) : 0;
-  const avgScore = token.avgScr?.toFixed(2) || '0.00';
+  const signalCount = token.scnt || 1;
+  const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
   
-  let msg = `${emoji} <b>Performance Update</b>\n\n`;
-  msg += `🪙 <b>${token.sym}</b> #${chainKey}\n`;
-  msg += `Entry: $${entryPrice.toPrecision(4)} → Now: $${currentPrice.toPrecision(4)}\n`;
-  msg += `<b>+${pctGain}% (${multiplier.toFixed(2)}x)</b>\n\n`;
-  msg += `${token.scnt} signal${token.scnt > 1 ? 's' : ''} | Avg: ${avgScore}\n`; // TODO: needs colored emoji for score
-  msg += `1st signal: ${signalAge}h ago`;
-  
-  return msg;
+  // Format: 🚀 PEPE #solana +150% (2.5x) (3 sigs)
+  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>+${pctGain}%</b> (${multiplier.toFixed(2)}x)${signalInfo}`;
 }
 
-async function processChain(chain) {
+/**
+ * Format aggregated performance message for all tokens
+ */
+function formatAggregatedMessage(performers) {
+  if (performers.length === 0) return null;
+  
+  // Sort by multiplier descending (best performers first)
+  performers.sort((a, b) => b.multiplier - a.multiplier);
+  
+  const moonCount = performers.filter(p => p.multiplier >= THRESHOLDS.MOON).length;
+  const rocketCount = performers.filter(p => p.multiplier >= THRESHOLDS.ROCKET && p.multiplier < THRESHOLDS.MOON).length;
+  
+  let headerEmoji = moonCount > 0 ? '🌙' : rocketCount > 0 ? '🚀' : '📈';
+  
+  let msg = `${headerEmoji} <b>Signal Performance</b> (${performers.length} token${performers.length > 1 ? 's' : ''})\n\n`;
+  
+  for (const p of performers) {
+    msg += formatTokenLine(p) + '\n';
+  }
+  
+  return msg.trim();
+}
+
+async function processChain(chain, allPerformers) {
   console.log(`\n📊 Processing ${chain.name}...`);
   
   const db = new TelegramDBv4(BOT_TOKEN, chain.id);
@@ -85,7 +110,7 @@ async function processChain(chain) {
   
   if (!index || !index.trackedTokens || index.trackedTokens.length === 0) {
     console.log(`   ℹ️ No tracked tokens for ${chain.name}`);
-    return { updated: 0, posted: 0 };
+    return { updated: 0, performers: 0, db: null, index: null, indexKey: null };
   }
   
   const tokenAddresses = index.trackedTokens.map(t => t.addr);
@@ -96,7 +121,7 @@ async function processChain(chain) {
   console.log(`   💰 Got prices for ${Object.keys(prices).length} tokens`);
   
   let updated = 0;
-  let posted = 0;
+  let performerCount = 0;
   let indexModified = false;
   
   for (let i = 0; i < index.trackedTokens.length; i++) {
@@ -106,49 +131,60 @@ async function processChain(chain) {
     
     if (!priceData || priceData.priceUsd <= 0) continue;
     
-    const entryPrice = token.p0 || 0;
-    if (entryPrice <= 0) continue;
+    const currentPrice = priceData.priceUsd;
     
-    const multiplier = priceData.priceUsd / entryPrice;
+    // Best entry = lowest price signal (p0 = first signal price, pLow = lowest signal price if tracked)
+    const bestEntry = token.pLow || token.p0 || 0;
+    if (bestEntry <= 0) continue;
+    
+    // Track peak price since first signal
+    const previousPeak = token.pPeak || bestEntry;
+    const peakPrice = Math.max(previousPeak, currentPrice);
+    
+    // Calculate multiplier: best entry → peak price (not current)
+    const multiplier = peakPrice / bestEntry;
     const signalAge = Date.now() - (token.firstSeen || 0);
     
-    // Update token with current price in index
-    token.pNow = priceData.priceUsd;
+    // Update token with current price and peak in index
+    token.pNow = currentPrice;
+    token.pPeak = peakPrice;
     token.mult = multiplier;
     token.lastPriceUpdate = Date.now();
     indexModified = true;
     updated++;
     
-    // Post performance update for significant gains on recent signals
+    // Collect performers for aggregated message (recent signals with significant gains)
     if (signalAge <= MAX_SIGNAL_AGE_MS && !token.postedPerf) {
       if (multiplier >= THRESHOLDS.GOOD) {
-        const msg = formatPerformanceMessage(token, priceData.priceUsd, multiplier, chain.key);
-        // Reply to the original signal message if we have the msgId
-        const result = await sendTelegramMessage(msg, token.msgId || null);
+        allPerformers.push({
+          token,
+          bestEntry,
+          peakPrice,
+          currentPrice,
+          multiplier,
+          chainTag: chain.tag,
+        });
         
-        if (result.ok) {
-          const replyInfo = token.msgId ? ` (reply to msg ${token.msgId})` : '';
-          console.log(`   🚀 Posted performance update: ${token.sym} +${((multiplier-1)*100).toFixed(0)}%${replyInfo}`);
-          token.postedPerf = multiplier >= THRESHOLDS.MOON ? 'moon' : 
-                             multiplier >= THRESHOLDS.ROCKET ? 'rocket' : 'good';
-          posted++;
-        }
+        // Mark as posted (will be saved after message is sent)
+        token.postedPerf = multiplier >= THRESHOLDS.MOON ? 'moon' : 
+                           multiplier >= THRESHOLDS.ROCKET ? 'rocket' : 'good';
+        performerCount++;
         
-        // Rate limit
-        await new Promise(r => setTimeout(r, 500));
+        console.log(`   📈 Found performer: ${token.sym} +${((multiplier-1)*100).toFixed(0)}% (best: $${bestEntry.toPrecision(3)} → peak: $${peakPrice.toPrecision(3)})`);
       }
     }
   }
   
-  // Save updated index with new prices
-  if (indexModified) {
-    index.lastPriceUpdate = Date.now();
-    await db.update('index', indexKey, index);
-    await db.pinIndex();
-  }
+  console.log(`   ✅ Updated ${updated} tokens, ${performerCount} performers`);
   
-  console.log(`   ✅ Updated ${updated} tokens, posted ${posted} updates`);
-  return { updated, posted };
+  // Return db and index for saving after message is sent
+  return { 
+    updated, 
+    performers: performerCount, 
+    db: indexModified ? db : null, 
+    index: indexModified ? index : null,
+    indexKey: indexModified ? indexKey : null
+  };
 }
 
 export default async function handler(req, res) {
@@ -162,18 +198,53 @@ export default async function handler(req, res) {
   const results = {
     chains: {},
     totalUpdated: 0,
-    totalPosted: 0,
+    totalPerformers: 0,
+    messageSent: false,
   };
   
+  // Collect all performers across chains
+  const allPerformers = [];
+  // Track chain data for saving after message is sent
+  const chainData = [];
+  
   try {
+    // Process all chains and collect performers
     for (const chain of CHAINS) {
-      const chainResult = await processChain(chain);
-      results.chains[chain.name] = chainResult;
+      const chainResult = await processChain(chain, allPerformers);
+      results.chains[chain.name] = { updated: chainResult.updated, performers: chainResult.performers };
       results.totalUpdated += chainResult.updated;
-      results.totalPosted += chainResult.posted;
+      results.totalPerformers += chainResult.performers;
+      
+      // Keep track of db/index for saving
+      if (chainResult.db) {
+        chainData.push(chainResult);
+      }
       
       // Small delay between chains
       await new Promise(r => setTimeout(r, 200));
+    }
+    
+    // Send aggregated message if there are performers
+    if (allPerformers.length > 0) {
+      const msg = formatAggregatedMessage(allPerformers);
+      if (msg) {
+        const result = await sendTelegramMessage(msg);
+        if (result.ok) {
+          console.log(`\n📨 Sent aggregated performance update for ${allPerformers.length} tokens`);
+          results.messageSent = true;
+        } else {
+          console.log(`\n❌ Failed to send message: ${result.description}`);
+        }
+      }
+    }
+    
+    // Save all chain indexes (mark tokens as postedPerf)
+    for (const { db, index, indexKey } of chainData) {
+      if (db && index && indexKey) {
+        index.lastPriceUpdate = Date.now();
+        await db.update('index', indexKey, index);
+        await db.pinIndex();
+      }
     }
     
     const duration = Date.now() - startTime;
