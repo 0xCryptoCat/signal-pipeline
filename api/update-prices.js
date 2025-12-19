@@ -254,6 +254,21 @@ async function processChain(chain, allPerformers) {
   
   console.log(`   ✅ Updated ${updated} tokens, ${performerCount} to report`);
   
+  // Build tokenPeaks map for wallet win rate calculation
+  // Store in index so it survives cold starts
+  if (!index.tokenPeaks) index.tokenPeaks = {};
+  
+  for (const token of index.trackedTokens) {
+    if (token.pPeak && token.p0) {
+      const prefix = token.addr.slice(0, 8);
+      index.tokenPeaks[prefix] = {
+        peak: token.pPeak / token.p0,  // Peak multiplier
+        entry: token.p0,
+        sym: token.sym,
+      };
+    }
+  }
+  
   // Return db and index for saving after message is sent
   return { 
     updated, 

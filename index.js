@@ -19,6 +19,7 @@ import {
   isSignalSeen,
   getTokenEnhancement,
   getWalletEnhancement,
+  getWalletReputation,
   categorizeWallets,
   initializeDB,
   getSeenSignalsFromDB,
@@ -362,12 +363,12 @@ function formatUtcTime() {
  * Format a signal for Telegram (HTML)
  * @param {Object} signal - Signal data
  * @param {Array} walletDetails - Wallet details with scores
- * @param {Object} options - Optional: { tokenHistory, walletCategories } from DB
+ * @param {Object} options - Optional: { tokenHistory, walletCategories, db } from DB
  */
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
   const dex = DEX_LINKS[signal.chainId] || DEX_LINKS[501];
-  const { tokenHistory, walletCategories } = options;
+  const { tokenHistory, walletCategories, db } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -434,9 +435,21 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     const winRate = parseFloat(w.winRate) || 0;
     const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
     
-    // Wallet link + repeat indicator + Entry score
+    // Get wallet reputation from our tracking (if db available)
+    const rep = db ? getWalletReputation(db, w.walletAddress) : null;
+    const stars = rep?.stars || 0;
+    const starEmoji = stars >= 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : '';
+    
+    // Wallet link + stars + repeat indicator + Entry score
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
-    msg += `\n<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
+    msg += `\n`;
+    
+    // Show stars first if earned
+    if (starEmoji) {
+      msg += `${starEmoji} `;
+    }
+    
+    msg += `<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
     
     // Mark repeat buyers
     if (isRepeat) {
@@ -459,8 +472,11 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     msg += '\n';
     
-    // OKX metrics on next line (PnL uses signed format)
-    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
+    // OKX metrics on next line - use our tracked win rate if available
+    const displayWinRate = rep && !rep.isNew && rep.winRate > 0 
+      ? `${rep.winRate}% (${rep.wins}/${rep.totalEntries})`
+      : `${winRate.toFixed(0)}%`;
+    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${displayWinRate}\n`;
   }
   
   // Timestamp with hidden signal ID embedded in link (invisible to users)
@@ -737,7 +753,8 @@ async function monitorSignals(config) {
       }
       
       // Format and send message (reply to previous signal for same token)
-      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories });
+      // Pass db for wallet reputation lookup
+      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
       
       if (botToken && chatId) {
         const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId);
