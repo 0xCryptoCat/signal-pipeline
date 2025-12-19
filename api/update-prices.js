@@ -226,24 +226,31 @@ async function processChain(chain, allPerformers) {
     else if (currentMultiplier <= THRESHOLDS.BAD) currentTier = 'bad';
     
     // Check if we should report this token
-    // For GAINS: Only report if we hit a NEW HIGH (pPeak increased)
-    // For LOSSES: Report on tier change (dump/rug thresholds)
+    // For GAINS: Only report if we hit a NEW HIGH (pPeak increased) AND crossed into higher tier
+    // For LOSSES: Only report if we crossed into a WORSE tier (not same or better)
     const lastReportedTier = token.lastPerfTier || null;
     const lastReportedPeak = token.lastReportedPeak || 0;
+    
+    // Tier ordering: higher = better for gains, lower = worse for losses
+    const tierOrder = { moon: 6, rocket: 5, good: 4, flat: 3, bad: 2, dump: 1, rug: 0 };
+    const currentTierOrder = tierOrder[currentTier] ?? 3;
+    const lastTierOrder = tierOrder[lastReportedTier] ?? 3;
     
     let shouldReport = false;
     if (signalAge <= MAX_SIGNAL_AGE_MS) {
       if (currentMultiplier >= 1.0) {
         // GAIN: Only report if this is a NEW ALL-TIME HIGH
-        // AND we crossed into a new tier above what we last reported
-        const peakTierOrder = { moon: 3, rocket: 2, good: 1, flat: 0 };
+        // AND we crossed into a HIGHER tier than what we last reported
         const lastPeakTier = token.lastPeakTier || 'flat';
+        const lastPeakTierOrder = tierOrder[lastPeakTier] ?? 3;
         shouldReport = isNewHigh && 
                        currentTier !== 'flat' && 
-                       (peakTierOrder[currentTier] || 0) > (peakTierOrder[lastPeakTier] || 0);
+                       currentTierOrder > lastPeakTierOrder;
       } else {
-        // LOSS: Report on tier change (like before)
-        shouldReport = currentTier !== 'flat' && currentTier !== lastReportedTier;
+        // LOSS: Only report if we crossed into a WORSE tier (lower number)
+        // Don't report if same tier or recovering (higher number)
+        shouldReport = currentTier !== 'flat' && 
+                       currentTierOrder < lastTierOrder;
       }
     }
     
