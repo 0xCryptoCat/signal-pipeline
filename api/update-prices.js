@@ -72,11 +72,11 @@ function buildMessageLink(chatId, msgId) {
  * Format a single token line for the aggregated performance message
  * 
  * For GAINS: Shows NEW HIGH marker + multiplier
- * For LOSSES: Shows current loss
+ * For LOSSES: Shows new ATL marker
  * Token symbol links to last signal message if available
  */
 function formatTokenLine(performer, chatId) {
-  const { token, multiplier, peakMultiplier, chainTag, isNewHigh } = performer;
+  const { token, multiplier, chainTag, isNewHigh, isNewLow, reportType } = performer;
   
   // Emoji based on performance
   let emoji;
@@ -93,8 +93,8 @@ function formatTokenLine(performer, chatId) {
   const signalCount = token.scnt || 1;
   const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
   
-  // For gains, show "NEW HIGH" indicator
-  const newHighMarker = isNewHigh && multiplier >= 1 ? ' 🆕' : '';
+  // Show ATH/ATL marker based on report type
+  const athAtlMarker = reportType === 'gain' ? ' 🆕ATH' : reportType === 'loss' ? ' 🆕ATL' : '';
   
   // Build message link for token symbol (links to last signal)
   const msgLink = buildMessageLink(chatId, token.lastMsgId);
@@ -102,8 +102,8 @@ function formatTokenLine(performer, chatId) {
     ? `<a href="${msgLink}">${token.sym}</a>`
     : token.sym;
   
-  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕 (3 sigs)
-  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${newHighMarker}${signalInfo}`;
+  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕ATH (3 sigs)
+  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${athAtlMarker}${signalInfo}`;
 }
 
 /**
@@ -191,32 +191,33 @@ async function processChain(chain, allPerformers) {
     const entryPrice = token.p0 || 0;
     if (entryPrice <= 0) continue;
     
-    // Peak price = highest price since signal (persisted)
-    const previousPeak = token.pPeak || entryPrice;
-    const isNewHigh = currentPrice > previousPeak;
+    // Track ATH (all-time high) and ATL (all-time low) since signal
+    const previousATH = token.pPeak || entryPrice;
+    const previousATL = token.pLow || entryPrice;
     
-    // Update peak if new high
-    if (isNewHigh) {
+    const isNewATH = currentPrice > previousATH;
+    const isNewATL = currentPrice < previousATL;
+    
+    // Update ATH/ATL if new extremes
+    if (isNewATH) {
       token.pPeak = currentPrice;
     }
+    if (isNewATL) {
+      token.pLow = currentPrice;
+    }
     
-    // Calculate multiplier: entry → PEAK price (best achieved performance)
-    // For reporting, we use peak price to show best achieved
-    const peakPrice = token.pPeak || currentPrice;
-    const multiplier = peakPrice / entryPrice;
+    // Calculate current multiplier (current price vs entry)
     const currentMultiplier = currentPrice / entryPrice;
     const signalAge = Date.now() - (token.firstSeen || 0);
     
     // Update token with current price in index
     token.pNow = currentPrice;
-    token.mult = multiplier; // Peak-based multiplier
-    token.multNow = currentMultiplier; // Current multiplier
+    token.multNow = currentMultiplier;
     token.lastPriceUpdate = Date.now();
     indexModified = true;
     updated++;
     
-    // Determine tier based on CURRENT performance (not peak)
-    // This allows reporting losses even after a pump
+    // Determine tier based on CURRENT performance
     let currentTier = 'flat';
     if (currentMultiplier >= THRESHOLDS.MOON) currentTier = 'moon';
     else if (currentMultiplier >= THRESHOLDS.ROCKET) currentTier = 'rocket';
@@ -225,32 +226,24 @@ async function processChain(chain, allPerformers) {
     else if (currentMultiplier <= THRESHOLDS.DUMP) currentTier = 'dump';
     else if (currentMultiplier <= THRESHOLDS.BAD) currentTier = 'bad';
     
-    // Check if we should report this token
-    // For GAINS: Only report if we hit a NEW HIGH (pPeak increased) AND crossed into higher tier
-    // For LOSSES: Only report if we crossed into a WORSE tier (not same or better)
-    const lastReportedTier = token.lastPerfTier || null;
-    const lastReportedPeak = token.lastReportedPeak || 0;
-    
-    // Tier ordering: higher = better for gains, lower = worse for losses
-    const tierOrder = { moon: 6, rocket: 5, good: 4, flat: 3, bad: 2, dump: 1, rug: 0 };
-    const currentTierOrder = tierOrder[currentTier] ?? 3;
-    const lastTierOrder = tierOrder[lastReportedTier] ?? 3;
+    // Simple reporting logic:
+    // - GAIN: Report only if NEW ATH (price went higher than ever before)
+    // - LOSS: Report only if NEW ATL (price went lower than ever before)
+    // - Must be in a significant tier (not flat)
+    // - Must be within age window
     
     let shouldReport = false;
-    if (signalAge <= MAX_SIGNAL_AGE_MS) {
-      if (currentMultiplier >= 1.0) {
-        // GAIN: Only report if this is a NEW ALL-TIME HIGH
-        // AND we crossed into a HIGHER tier than what we last reported
-        const lastPeakTier = token.lastPeakTier || 'flat';
-        const lastPeakTierOrder = tierOrder[lastPeakTier] ?? 3;
-        shouldReport = isNewHigh && 
-                       currentTier !== 'flat' && 
-                       currentTierOrder > lastPeakTierOrder;
-      } else {
-        // LOSS: Only report if we crossed into a WORSE tier (lower number)
-        // Don't report if same tier or recovering (higher number)
-        shouldReport = currentTier !== 'flat' && 
-                       currentTierOrder < lastTierOrder;
+    let reportType = null;
+    
+    if (signalAge <= MAX_SIGNAL_AGE_MS && currentTier !== 'flat') {
+      if (currentMultiplier >= 1.0 && isNewATH) {
+        // GAIN: New all-time high since signal
+        shouldReport = true;
+        reportType = 'gain';
+      } else if (currentMultiplier < 1.0 && isNewATL) {
+        // LOSS: New all-time low since signal
+        shouldReport = true;
+        reportType = 'loss';
       }
     }
     
@@ -259,23 +252,21 @@ async function processChain(chain, allPerformers) {
         token,
         entryPrice,
         currentPrice,
-        peakPrice,
-        multiplier: currentMultiplier, // Use current for display
-        peakMultiplier: multiplier, // Include peak info
+        multiplier: currentMultiplier,
         chainTag: chain.tag,
-        isNewHigh,
+        isNewHigh: isNewATH,
+        isNewLow: isNewATL,
+        reportType,
       });
       
       // Update tracking fields
       token.lastPerfTier = currentTier;
-      if (currentMultiplier >= 1.0) {
-        token.lastPeakTier = currentTier; // Track highest gain tier reported
-        token.lastReportedPeak = peakPrice;
-      }
+      token.lastReportedPrice = currentPrice;
       performerCount++;
       
-      const sign = multiplier >= 1 ? '+' : '';
-      console.log(`   📊 Performance: ${token.sym} ${sign}${((multiplier-1)*100).toFixed(0)}% (${currentTier})`);
+      const sign = currentMultiplier >= 1 ? '+' : '';
+      const type = reportType === 'gain' ? '📈 ATH' : '📉 ATL';
+      console.log(`   ${type}: ${token.sym} ${sign}${((currentMultiplier-1)*100).toFixed(0)}% (${currentTier})`);
     }
   }
   
