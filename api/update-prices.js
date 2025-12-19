@@ -60,11 +60,11 @@ async function sendTelegramMessage(text, replyToMsgId = null) {
 /**
  * Format a single token line for the aggregated performance message
  * 
- * Shows: entry price → current price (multiplier)
- * Handles both gains AND losses
+ * For GAINS: Shows NEW HIGH marker + multiplier
+ * For LOSSES: Shows current loss
  */
 function formatTokenLine(performer) {
-  const { token, entryPrice, currentPrice, multiplier, chainTag } = performer;
+  const { token, multiplier, peakMultiplier, chainTag, isNewHigh } = performer;
   
   // Emoji based on performance
   let emoji;
@@ -81,8 +81,11 @@ function formatTokenLine(performer) {
   const signalCount = token.scnt || 1;
   const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
   
-  // Format: 🚀 PEPE #solana +150% (2.5x) (3 sigs)
-  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${signalInfo}`;
+  // For gains, show "NEW HIGH" indicator
+  const newHighMarker = isNewHigh && multiplier >= 1 ? ' 🆕' : '';
+  
+  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕 (3 sigs)
+  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${newHighMarker}${signalInfo}`;
 }
 
 /**
@@ -168,50 +171,80 @@ async function processChain(chain, allPerformers) {
     const entryPrice = token.p0 || 0;
     if (entryPrice <= 0) continue;
     
-    // Track peak and trough for historical context
+    // Peak price = highest price since signal (persisted)
     const previousPeak = token.pPeak || entryPrice;
-    const previousTrough = token.pTrough || entryPrice;
-    token.pPeak = Math.max(previousPeak, currentPrice);
-    token.pTrough = Math.min(previousTrough, currentPrice);
+    const isNewHigh = currentPrice > previousPeak;
     
-    // Calculate multiplier: entry → CURRENT price (real-time performance)
-    const multiplier = currentPrice / entryPrice;
+    // Update peak if new high
+    if (isNewHigh) {
+      token.pPeak = currentPrice;
+    }
+    
+    // Calculate multiplier: entry → PEAK price (best achieved performance)
+    // For reporting, we use peak price to show best achieved
+    const peakPrice = token.pPeak || currentPrice;
+    const multiplier = peakPrice / entryPrice;
+    const currentMultiplier = currentPrice / entryPrice;
     const signalAge = Date.now() - (token.firstSeen || 0);
     
     // Update token with current price in index
     token.pNow = currentPrice;
-    token.mult = multiplier;
+    token.mult = multiplier; // Peak-based multiplier
+    token.multNow = currentMultiplier; // Current multiplier
     token.lastPriceUpdate = Date.now();
     indexModified = true;
     updated++;
     
-    // Determine current performance tier
+    // Determine tier based on CURRENT performance (not peak)
+    // This allows reporting losses even after a pump
     let currentTier = 'flat';
-    if (multiplier >= THRESHOLDS.MOON) currentTier = 'moon';
-    else if (multiplier >= THRESHOLDS.ROCKET) currentTier = 'rocket';
-    else if (multiplier >= THRESHOLDS.GOOD) currentTier = 'good';
-    else if (multiplier <= THRESHOLDS.RUG) currentTier = 'rug';
-    else if (multiplier <= THRESHOLDS.DUMP) currentTier = 'dump';
-    else if (multiplier <= THRESHOLDS.BAD) currentTier = 'bad';
+    if (currentMultiplier >= THRESHOLDS.MOON) currentTier = 'moon';
+    else if (currentMultiplier >= THRESHOLDS.ROCKET) currentTier = 'rocket';
+    else if (currentMultiplier >= THRESHOLDS.GOOD) currentTier = 'good';
+    else if (currentMultiplier <= THRESHOLDS.RUG) currentTier = 'rug';
+    else if (currentMultiplier <= THRESHOLDS.DUMP) currentTier = 'dump';
+    else if (currentMultiplier <= THRESHOLDS.BAD) currentTier = 'bad';
     
     // Check if we should report this token
-    // Report if: within age window AND tier changed from last report
+    // For GAINS: Only report if we hit a NEW HIGH (pPeak increased)
+    // For LOSSES: Report on tier change (dump/rug thresholds)
     const lastReportedTier = token.lastPerfTier || null;
-    const shouldReport = signalAge <= MAX_SIGNAL_AGE_MS && 
-                         currentTier !== 'flat' && 
-                         currentTier !== lastReportedTier;
+    const lastReportedPeak = token.lastReportedPeak || 0;
+    
+    let shouldReport = false;
+    if (signalAge <= MAX_SIGNAL_AGE_MS) {
+      if (currentMultiplier >= 1.0) {
+        // GAIN: Only report if this is a NEW ALL-TIME HIGH
+        // AND we crossed into a new tier above what we last reported
+        const peakTierOrder = { moon: 3, rocket: 2, good: 1, flat: 0 };
+        const lastPeakTier = token.lastPeakTier || 'flat';
+        shouldReport = isNewHigh && 
+                       currentTier !== 'flat' && 
+                       (peakTierOrder[currentTier] || 0) > (peakTierOrder[lastPeakTier] || 0);
+      } else {
+        // LOSS: Report on tier change (like before)
+        shouldReport = currentTier !== 'flat' && currentTier !== lastReportedTier;
+      }
+    }
     
     if (shouldReport) {
       allPerformers.push({
         token,
         entryPrice,
         currentPrice,
-        multiplier,
+        peakPrice,
+        multiplier: currentMultiplier, // Use current for display
+        peakMultiplier: multiplier, // Include peak info
         chainTag: chain.tag,
+        isNewHigh,
       });
       
-      // Update last reported tier
+      // Update tracking fields
       token.lastPerfTier = currentTier;
+      if (currentMultiplier >= 1.0) {
+        token.lastPeakTier = currentTier; // Track highest gain tier reported
+        token.lastReportedPeak = peakPrice;
+      }
       performerCount++;
       
       const sign = multiplier >= 1 ? '+' : '';
