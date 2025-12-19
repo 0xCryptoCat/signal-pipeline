@@ -19,6 +19,7 @@ import {
   isSignalSeen,
   getTokenEnhancement,
   getWalletEnhancement,
+  categorizeWallets,
   initializeDB,
   getSeenSignalsFromDB,
   pinIndexAfterUpdate,
@@ -361,12 +362,12 @@ function formatUtcTime() {
  * Format a signal for Telegram (HTML)
  * @param {Object} signal - Signal data
  * @param {Array} walletDetails - Wallet details with scores
- * @param {Object} options - Optional: { tokenHistory } from DB for repeat signals
+ * @param {Object} options - Optional: { tokenHistory, walletCategories } from DB
  */
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
   const dex = DEX_LINKS[signal.chainId] || DEX_LINKS[501];
-  const { tokenHistory } = options;
+  const { tokenHistory, walletCategories } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -404,7 +405,26 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   
   // Signal stats (MCap, Vol - no price, redundant with DEX links)
   msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
-  msg += `${signal.addressNum} wallet${signal.addressNum > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+  
+  // Wallet count - show new vs total if we have categorization
+  if (walletCategories && walletCategories.totalUnique > walletDetails.length) {
+    const newCount = walletCategories.newWallets.length;
+    const repeatCount = walletCategories.repeatWallets.length;
+    const totalUnique = walletCategories.totalUnique;
+    
+    if (repeatCount > 0) {
+      msg += `${newCount} new + ${repeatCount} 🔄 (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+    } else {
+      msg += `${newCount} wallet${newCount > 1 ? 's' : ''} (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+    }
+  } else {
+    msg += `${walletDetails.length} wallet${walletDetails.length > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+  }
+  
+  // Create a set of repeat wallet prefixes for marking
+  const repeatPrefixes = new Set(
+    (walletCategories?.repeatWallets || []).map(w => w.walletAddress.slice(0, 8))
+  );
   
   for (const w of walletDetails) {
     const isKol = w.addressInfo?.kolAddress;
@@ -412,10 +432,16 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     const pnl = parseFloat(w.pnl7d) || 0;
     const roi = parseFloat(w.roi) || 0;
     const winRate = parseFloat(w.winRate) || 0;
+    const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
     
-    // Wallet link + Entry score on same line
+    // Wallet link + repeat indicator + Entry score
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
     msg += `\n<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
+    
+    // Mark repeat buyers
+    if (isRepeat) {
+      msg += ` 🔄`;
+    }
     
     // Entry score inline
     if (w.entryScore !== undefined) {
@@ -701,14 +727,17 @@ async function monitorSignals(config) {
       // Get token history for repeat signal indicator
       let tokenHistory = null;
       let replyToMsgId = null;
+      let walletCategories = null;
       if (db) {
         tokenHistory = getTokenEnhancement(db, signal.tokenAddress);
         // Get previous message ID for reply chaining
         replyToMsgId = getTokenLastMsgId(db, signal.tokenAddress);
+        // Categorize wallets as new vs repeat
+        walletCategories = categorizeWallets(db, signal.tokenAddress, walletDetails);
       }
       
       // Format and send message (reply to previous signal for same token)
-      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory });
+      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories });
       
       if (botToken && chatId) {
         const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId);

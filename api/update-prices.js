@@ -23,13 +23,18 @@ const CHAINS = [
 
 // Performance thresholds for posting updates
 const THRESHOLDS = {
-  MOON: 2.0,      // 2x = 100% gain
-  ROCKET: 1.5,    // 50% gain
-  GOOD: 1.25,     // 25% gain
+  // Gains (positive multipliers)
+  MOON: 2.0,      // 2x = +100% gain
+  ROCKET: 1.5,    // +50% gain  
+  GOOD: 1.25,     // +25% gain
+  // Losses (multipliers below 1)
+  BAD: 0.75,      // -25% loss
+  DUMP: 0.5,      // -50% loss
+  RUG: 0.25,      // -75% loss (likely rugged)
 };
 
 // Only post updates for signals newer than this
-const MAX_SIGNAL_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours (extended from 24)
 
 async function sendTelegramMessage(text, replyToMsgId = null) {
   const body = {
@@ -55,42 +60,68 @@ async function sendTelegramMessage(text, replyToMsgId = null) {
 /**
  * Format a single token line for the aggregated performance message
  * 
- * Shows: best entry price → peak price reached (multiplier)
- * Best entry = lowest price signal for this token
- * Peak = highest price seen since that signal
+ * Shows: entry price → current price (multiplier)
+ * Handles both gains AND losses
  */
 function formatTokenLine(performer) {
-  const { token, bestEntry, peakPrice, multiplier, chainTag } = performer;
+  const { token, entryPrice, currentPrice, multiplier, chainTag } = performer;
   
-  const emoji = multiplier >= THRESHOLDS.MOON ? '🌙' : 
-                multiplier >= THRESHOLDS.ROCKET ? '🚀' : '📈';
+  // Emoji based on performance
+  let emoji;
+  if (multiplier >= THRESHOLDS.MOON) emoji = '🌙';
+  else if (multiplier >= THRESHOLDS.ROCKET) emoji = '🚀';
+  else if (multiplier >= THRESHOLDS.GOOD) emoji = '📈';
+  else if (multiplier >= 1.0) emoji = '➡️';  // flat/small gain
+  else if (multiplier >= THRESHOLDS.BAD) emoji = '📉';
+  else if (multiplier >= THRESHOLDS.DUMP) emoji = '💀';
+  else emoji = '☠️';  // rugged
   
-  const pctGain = ((multiplier - 1) * 100).toFixed(0);
+  const pctChange = ((multiplier - 1) * 100).toFixed(0);
+  const sign = multiplier >= 1 ? '+' : '';
   const signalCount = token.scnt || 1;
   const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
   
   // Format: 🚀 PEPE #solana +150% (2.5x) (3 sigs)
-  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>+${pctGain}%</b> (${multiplier.toFixed(2)}x)${signalInfo}`;
+  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${signalInfo}`;
 }
 
 /**
  * Format aggregated performance message for all tokens
+ * Separates gains and losses for clarity
  */
 function formatAggregatedMessage(performers) {
   if (performers.length === 0) return null;
   
-  // Sort by multiplier descending (best performers first)
-  performers.sort((a, b) => b.multiplier - a.multiplier);
+  // Separate gains and losses
+  const gains = performers.filter(p => p.multiplier >= 1.0);
+  const losses = performers.filter(p => p.multiplier < 1.0);
   
-  const moonCount = performers.filter(p => p.multiplier >= THRESHOLDS.MOON).length;
-  const rocketCount = performers.filter(p => p.multiplier >= THRESHOLDS.ROCKET && p.multiplier < THRESHOLDS.MOON).length;
+  // Sort gains by multiplier descending, losses by multiplier ascending
+  gains.sort((a, b) => b.multiplier - a.multiplier);
+  losses.sort((a, b) => a.multiplier - b.multiplier);
   
-  let headerEmoji = moonCount > 0 ? '🌙' : rocketCount > 0 ? '🚀' : '📈';
+  const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.MOON).length;
+  const rugCount = losses.filter(p => p.multiplier <= THRESHOLDS.RUG).length;
   
-  let msg = `${headerEmoji} <b>Signal Performance</b> (${performers.length} token${performers.length > 1 ? 's' : ''})\n\n`;
+  // Header emoji based on overall performance
+  let headerEmoji = moonCount > 0 ? '🌙' : gains.length > losses.length ? '📈' : '📊';
   
-  for (const p of performers) {
-    msg += formatTokenLine(p) + '\n';
+  let msg = `${headerEmoji} <b>Signal Performance</b> (${performers.length} token${performers.length > 1 ? 's' : ''})\n`;
+  
+  // Gains section
+  if (gains.length > 0) {
+    msg += `\n<b>📈 Gains (${gains.length})</b>\n`;
+    for (const p of gains) {
+      msg += formatTokenLine(p) + '\n';
+    }
+  }
+  
+  // Losses section  
+  if (losses.length > 0) {
+    msg += `\n<b>📉 Losses (${losses.length})</b>\n`;
+    for (const p of losses) {
+      msg += formatTokenLine(p) + '\n';
+    }
   }
   
   return msg.trim();
@@ -133,49 +164,62 @@ async function processChain(chain, allPerformers) {
     
     const currentPrice = priceData.priceUsd;
     
-    // Best entry = lowest price signal (p0 = first signal price, pLow = lowest signal price if tracked)
-    const bestEntry = token.pLow || token.p0 || 0;
-    if (bestEntry <= 0) continue;
+    // Entry price = first signal price (p0)
+    const entryPrice = token.p0 || 0;
+    if (entryPrice <= 0) continue;
     
-    // Track peak price since first signal
-    const previousPeak = token.pPeak || bestEntry;
-    const peakPrice = Math.max(previousPeak, currentPrice);
+    // Track peak and trough for historical context
+    const previousPeak = token.pPeak || entryPrice;
+    const previousTrough = token.pTrough || entryPrice;
+    token.pPeak = Math.max(previousPeak, currentPrice);
+    token.pTrough = Math.min(previousTrough, currentPrice);
     
-    // Calculate multiplier: best entry → peak price (not current)
-    const multiplier = peakPrice / bestEntry;
+    // Calculate multiplier: entry → CURRENT price (real-time performance)
+    const multiplier = currentPrice / entryPrice;
     const signalAge = Date.now() - (token.firstSeen || 0);
     
-    // Update token with current price and peak in index
+    // Update token with current price in index
     token.pNow = currentPrice;
-    token.pPeak = peakPrice;
     token.mult = multiplier;
     token.lastPriceUpdate = Date.now();
     indexModified = true;
     updated++;
     
-    // Collect performers for aggregated message (recent signals with significant gains)
-    if (signalAge <= MAX_SIGNAL_AGE_MS && !token.postedPerf) {
-      if (multiplier >= THRESHOLDS.GOOD) {
-        allPerformers.push({
-          token,
-          bestEntry,
-          peakPrice,
-          currentPrice,
-          multiplier,
-          chainTag: chain.tag,
-        });
-        
-        // Mark as posted (will be saved after message is sent)
-        token.postedPerf = multiplier >= THRESHOLDS.MOON ? 'moon' : 
-                           multiplier >= THRESHOLDS.ROCKET ? 'rocket' : 'good';
-        performerCount++;
-        
-        console.log(`   📈 Found performer: ${token.sym} +${((multiplier-1)*100).toFixed(0)}% (best: $${bestEntry.toPrecision(3)} → peak: $${peakPrice.toPrecision(3)})`);
-      }
+    // Determine current performance tier
+    let currentTier = 'flat';
+    if (multiplier >= THRESHOLDS.MOON) currentTier = 'moon';
+    else if (multiplier >= THRESHOLDS.ROCKET) currentTier = 'rocket';
+    else if (multiplier >= THRESHOLDS.GOOD) currentTier = 'good';
+    else if (multiplier <= THRESHOLDS.RUG) currentTier = 'rug';
+    else if (multiplier <= THRESHOLDS.DUMP) currentTier = 'dump';
+    else if (multiplier <= THRESHOLDS.BAD) currentTier = 'bad';
+    
+    // Check if we should report this token
+    // Report if: within age window AND tier changed from last report
+    const lastReportedTier = token.lastPerfTier || null;
+    const shouldReport = signalAge <= MAX_SIGNAL_AGE_MS && 
+                         currentTier !== 'flat' && 
+                         currentTier !== lastReportedTier;
+    
+    if (shouldReport) {
+      allPerformers.push({
+        token,
+        entryPrice,
+        currentPrice,
+        multiplier,
+        chainTag: chain.tag,
+      });
+      
+      // Update last reported tier
+      token.lastPerfTier = currentTier;
+      performerCount++;
+      
+      const sign = multiplier >= 1 ? '+' : '';
+      console.log(`   📊 Performance: ${token.sym} ${sign}${((multiplier-1)*100).toFixed(0)}% (${currentTier})`);
     }
   }
   
-  console.log(`   ✅ Updated ${updated} tokens, ${performerCount} performers`);
+  console.log(`   ✅ Updated ${updated} tokens, ${performerCount} to report`);
   
   // Return db and index for saving after message is sent
   return { 
