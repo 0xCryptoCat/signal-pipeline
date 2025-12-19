@@ -58,12 +58,24 @@ async function sendTelegramMessage(text, replyToMsgId = null) {
 }
 
 /**
+ * Build Telegram message link from chat ID and message ID
+ * Format: https://t.me/c/{chat_id_without_-100}/{message_id}
+ */
+function buildMessageLink(chatId, msgId) {
+  if (!chatId || !msgId) return null;
+  // Remove -100 prefix from chat ID for link format
+  const cleanChatId = String(chatId).replace(/^-100/, '');
+  return `https://t.me/c/${cleanChatId}/${msgId}`;
+}
+
+/**
  * Format a single token line for the aggregated performance message
  * 
  * For GAINS: Shows NEW HIGH marker + multiplier
  * For LOSSES: Shows current loss
+ * Token symbol links to last signal message if available
  */
-function formatTokenLine(performer) {
+function formatTokenLine(performer, chatId) {
   const { token, multiplier, peakMultiplier, chainTag, isNewHigh } = performer;
   
   // Emoji based on performance
@@ -84,15 +96,23 @@ function formatTokenLine(performer) {
   // For gains, show "NEW HIGH" indicator
   const newHighMarker = isNewHigh && multiplier >= 1 ? ' 🆕' : '';
   
+  // Build message link for token symbol (links to last signal)
+  const msgLink = buildMessageLink(chatId, token.lastMsgId);
+  const tokenName = msgLink 
+    ? `<a href="${msgLink}">${token.sym}</a>`
+    : token.sym;
+  
   // Format: 🚀 PEPE #solana +150% (2.5x) 🆕 (3 sigs)
-  return `${emoji} <b>${token.sym}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${newHighMarker}${signalInfo}`;
+  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${newHighMarker}${signalInfo}`;
 }
 
 /**
  * Format aggregated performance message for all tokens
  * Separates gains and losses for clarity
+ * @param {Array} performers - Array of performer objects
+ * @param {string} chatId - Telegram chat ID for message links
  */
-function formatAggregatedMessage(performers) {
+function formatAggregatedMessage(performers, chatId) {
   if (performers.length === 0) return null;
   
   // Separate gains and losses
@@ -115,7 +135,7 @@ function formatAggregatedMessage(performers) {
   if (gains.length > 0) {
     msg += `\n<b>📈 Gains (${gains.length})</b>\n`;
     for (const p of gains) {
-      msg += formatTokenLine(p) + '\n';
+      msg += formatTokenLine(p, chatId) + '\n';
     }
   }
   
@@ -123,7 +143,7 @@ function formatAggregatedMessage(performers) {
   if (losses.length > 0) {
     msg += `\n<b>📉 Losses (${losses.length})</b>\n`;
     for (const p of losses) {
-      msg += formatTokenLine(p) + '\n';
+      msg += formatTokenLine(p, chatId) + '\n';
     }
   }
   
@@ -318,7 +338,7 @@ export default async function handler(req, res) {
     
     // Send aggregated message if there are performers
     if (allPerformers.length > 0) {
-      const msg = formatAggregatedMessage(allPerformers);
+      const msg = formatAggregatedMessage(allPerformers, CHAT_ID);
       if (msg) {
         const result = await sendTelegramMessage(msg);
         if (result.ok) {
