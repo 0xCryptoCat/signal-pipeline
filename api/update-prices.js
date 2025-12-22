@@ -33,6 +33,9 @@ const THRESHOLDS = {
   RUG: 0.25,      // -75% loss (likely rugged)
 };
 
+// Minimum liquidity to consider token not rugged (USD)
+const MIN_LIQUIDITY_USD = 1000;
+
 // Only post updates for signals newer than this
 const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours (extended from 24)
 
@@ -73,28 +76,36 @@ function buildMessageLink(chatId, msgId) {
  * 
  * For GAINS: Shows NEW HIGH marker + multiplier
  * For LOSSES: Shows new ATL marker
+ * For RUGGED: Shows skull marker (liquidity dried up)
  * Token symbol links to last signal message if available
  */
 function formatTokenLine(performer, chatId) {
-  const { token, multiplier, chainTag, isNewHigh, isNewLow, reportType } = performer;
+  const { token, multiplier, chainTag, isNewHigh, isNewLow, reportType, isRugged } = performer;
+  
+  // For rugged tokens: show 0.0x and -100%
+  const displayMultiplier = isRugged ? 0 : multiplier;
+  const pctChange = isRugged ? -100 : ((multiplier - 1) * 100).toFixed(0);
+  const sign = displayMultiplier >= 1 ? '+' : '';
   
   // Emoji based on performance
   let emoji;
-  if (multiplier >= THRESHOLDS.MOON) emoji = '🌙';
+  if (isRugged) emoji = '🪦';  // Rugged (tombstone)
+  else if (multiplier >= THRESHOLDS.MOON) emoji = '🌙';
   else if (multiplier >= THRESHOLDS.ROCKET) emoji = '🚀';
   else if (multiplier >= THRESHOLDS.GOOD) emoji = '📈';
   else if (multiplier >= 1.0) emoji = '➡️';  // flat/small gain
   else if (multiplier >= THRESHOLDS.BAD) emoji = '📉';
   else if (multiplier >= THRESHOLDS.DUMP) emoji = '💀';
-  else emoji = '☠️';  // rugged
+  else emoji = '🪦';  // severe loss
   
-  const pctChange = ((multiplier - 1) * 100).toFixed(0);
-  const sign = multiplier >= 1 ? '+' : '';
   const signalCount = token.scnt || 1;
   const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
   
-  // Show ATH/ATL marker based on report type
-  const athAtlMarker = reportType === 'gain' ? ' 🆕ATH' : reportType === 'loss' ? ' 🆕ATL' : '';
+  // Show ATH/ATL/RUGGED marker based on report type
+  let statusMarker = '';
+  if (isRugged) statusMarker = ' 🪦RUGGED';
+  else if (reportType === 'gain') statusMarker = ' 🆕ATH';
+  else if (reportType === 'loss') statusMarker = ' 🆕ATL';
   
   // Build message link for token symbol (links to last signal)
   const msgLink = buildMessageLink(chatId, token.lastMsgId);
@@ -103,33 +114,33 @@ function formatTokenLine(performer, chatId) {
     : token.sym;
   
   // Format: 🚀 PEPE #solana +150% (2.5x) 🆕ATH (3 sigs)
-  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${multiplier.toFixed(2)}x)${athAtlMarker}${signalInfo}`;
+  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${displayMultiplier.toFixed(2)}x)${statusMarker}${signalInfo}`;
 }
 
 /**
  * Format aggregated performance message for all tokens
- * Separates gains and losses for clarity
+ * Separates gains, losses, and rugged tokens for clarity
  * @param {Array} performers - Array of performer objects
  * @param {string} chatId - Telegram chat ID for message links
  */
 function formatAggregatedMessage(performers, chatId) {
   if (performers.length === 0) return null;
   
-  // Separate gains and losses
-  const gains = performers.filter(p => p.multiplier >= 1.0);
-  const losses = performers.filter(p => p.multiplier < 1.0);
+  // Separate gains and losses (rugged tokens go in losses)
+  const gains = performers.filter(p => p.multiplier >= 1.0 && !p.isRugged);
+  const losses = performers.filter(p => p.multiplier < 1.0 || p.isRugged);
   
   // Sort gains by multiplier descending, losses by multiplier ascending
   gains.sort((a, b) => b.multiplier - a.multiplier);
   losses.sort((a, b) => a.multiplier - b.multiplier);
   
   const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.MOON).length;
-  const rugCount = losses.filter(p => p.multiplier <= THRESHOLDS.RUG).length;
   
   // Header emoji based on overall performance
   let headerEmoji = moonCount > 0 ? '🌙' : gains.length > losses.length ? '📈' : '📊';
   
-  let msg = `${headerEmoji} <b>Signal Performance</b> (${performers.length} token${performers.length > 1 ? 's' : ''})\n`;
+  const totalCount = gains.length + losses.length;
+  let msg = `${headerEmoji} <b>Signal Performance</b> (${totalCount} token${totalCount !== 1 ? 's' : ''})\n`;
   
   // Gains section
   if (gains.length > 0) {
@@ -139,7 +150,7 @@ function formatAggregatedMessage(performers, chatId) {
     }
   }
   
-  // Losses section  
+  // Losses section (includes rugged tokens)
   if (losses.length > 0) {
     msg += `\n<b>📉 Losses (${losses.length})</b>\n`;
     for (const p of losses) {
@@ -186,6 +197,18 @@ async function processChain(chain, allPerformers) {
     if (!priceData || priceData.priceUsd <= 0) continue;
     
     const currentPrice = priceData.priceUsd;
+    const liquidity = priceData.liquidity || 0;
+    
+    // Detect rugged tokens (liquidity dried up)
+    const isRugged = liquidity < MIN_LIQUIDITY_USD;
+    const wasRugged = token.rugged || false;
+    const newlyRugged = isRugged && !wasRugged;
+    
+    // Update rugged status in token
+    if (isRugged) {
+      token.rugged = true;
+      token.ruggedAt = token.ruggedAt || Date.now();
+    }
     
     // Entry price = first signal price (p0)
     const entryPrice = token.p0 || 0;
@@ -227,23 +250,31 @@ async function processChain(chain, allPerformers) {
     else if (currentMultiplier <= THRESHOLDS.BAD) currentTier = 'bad';
     
     // Simple reporting logic:
-    // - GAIN: Report only if NEW ATH (price went higher than ever before)
-    // - LOSS: Report only if NEW ATL (price went lower than ever before)
+    // - RUGGED: Report once when token becomes rugged (liquidity dries up)
+    // - GAIN: Report only if NEW ATH (price went higher than ever before) AND not rugged
+    // - LOSS: Report only if NEW ATL (price went lower than ever before) AND not rugged
     // - Must be in a significant tier (not flat)
     // - Must be within age window
     
     let shouldReport = false;
     let reportType = null;
     
-    if (signalAge <= MAX_SIGNAL_AGE_MS && currentTier !== 'flat') {
-      if (currentMultiplier >= 1.0 && isNewATH) {
-        // GAIN: New all-time high since signal
+    if (signalAge <= MAX_SIGNAL_AGE_MS) {
+      if (newlyRugged) {
+        // RUGGED: Token just got rugged (first time detecting low liquidity)
         shouldReport = true;
-        reportType = 'gain';
-      } else if (currentMultiplier < 1.0 && isNewATL) {
-        // LOSS: New all-time low since signal
-        shouldReport = true;
-        reportType = 'loss';
+        reportType = 'rugged';
+      } else if (!isRugged && currentTier !== 'flat') {
+        // Only report ATH/ATL for non-rugged tokens
+        if (currentMultiplier >= 1.0 && isNewATH) {
+          // GAIN: New all-time high since signal
+          shouldReport = true;
+          reportType = 'gain';
+        } else if (currentMultiplier < 1.0 && isNewATL) {
+          // LOSS: New all-time low since signal
+          shouldReport = true;
+          reportType = 'loss';
+        }
       }
     }
     
@@ -257,6 +288,8 @@ async function processChain(chain, allPerformers) {
         isNewHigh: isNewATH,
         isNewLow: isNewATL,
         reportType,
+        isRugged: reportType === 'rugged',
+        liquidity,
       });
       
       // Update tracking fields
@@ -265,8 +298,11 @@ async function processChain(chain, allPerformers) {
       performerCount++;
       
       const sign = currentMultiplier >= 1 ? '+' : '';
-      const type = reportType === 'gain' ? '📈 ATH' : '📉 ATL';
-      console.log(`   ${type}: ${token.sym} ${sign}${((currentMultiplier-1)*100).toFixed(0)}% (${currentTier})`);
+      let typeLog;
+      if (reportType === 'rugged') typeLog = '🪦 RUG';
+      else if (reportType === 'gain') typeLog = '📈 ATH';
+      else typeLog = '📉 ATL';
+      console.log(`   ${typeLog}: ${token.sym} ${sign}${((currentMultiplier-1)*100).toFixed(0)}% (${currentTier}) liq:$${liquidity.toFixed(0)}`);
     }
   }
   

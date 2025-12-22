@@ -399,10 +399,8 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   
   msg += `<code>${signal.tokenAddress}</code>\n`;
   
-  // Chain + Age + DEX links
-  msg += `Age: ${signal.tokenAge} - `;
-  msg += `<a href="${dex.dextools}${signal.tokenAddress}">DexT</a> | `;
-  msg += `<a href="${dex.dexscreener}${signal.tokenAddress}">DexS</a>\n\n`;
+  // Chain + Age (DEX links moved to inline buttons)
+  msg += `Age: ${signal.tokenAge}\n\n`;
   
   // Signal stats (MCap, Vol - no price, redundant with DEX links)
   msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
@@ -555,7 +553,26 @@ async function saveSignalId(chainName, signalKey) {
   }
 }
 
-async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null) {
+/**
+ * Build inline keyboard buttons for a signal
+ */
+function buildSignalButtons(chainId, tokenAddress) {
+  const dex = DEX_LINKS[chainId] || DEX_LINKS[501];
+  
+  return {
+    inline_keyboard: [
+      [
+        { text: '📊 DexTools', url: `${dex.dextools}${tokenAddress}` },
+        { text: '📈 DexScreener', url: `${dex.dexscreener}${tokenAddress}` },
+      ],
+      [
+        { text: '🤖 Buy', callback_data: `buy_${tokenAddress.slice(0, 8)}` },
+      ],
+    ],
+  };
+}
+
+async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null, inlineKeyboard = null) {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   
   const body = {
@@ -569,6 +586,11 @@ async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null) 
   if (replyToMsgId) {
     body.reply_to_message_id = replyToMsgId;
     body.allow_sending_without_reply = true; // Don't fail if original deleted
+  }
+  
+  // Add inline keyboard if provided
+  if (inlineKeyboard) {
+    body.reply_markup = inlineKeyboard;
   }
   
   const res = await fetch(url, {
@@ -755,9 +777,10 @@ async function monitorSignals(config) {
       // Format and send message (reply to previous signal for same token)
       // Pass db for wallet reputation lookup
       const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
+      const buttons = buildSignalButtons(signal.chainId, signal.tokenAddress);
       
       if (botToken && chatId) {
-        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId);
+        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, buttons);
         if (result.ok) {
           const replyInfo = replyToMsgId ? ` (reply to ${replyToMsgId})` : '';
           console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
