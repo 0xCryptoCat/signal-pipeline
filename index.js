@@ -362,7 +362,7 @@ async function scoreWalletEntries(walletAddress, chainId, maxTokens = 15) {
 // TELEGRAM FORMATTING (HTML)
 // ============================================================
 
-const SEPARATOR = '━━━━━━━━━━━━━━━━━━━━━━━━━';
+const SEPARATOR = '━━━━━━━━━━━━━━━━━━━━━'; 
 
 /**
  * Format UTC timestamp
@@ -661,9 +661,9 @@ async function saveSignalId(chainName, signalKey) {
 }
 
 /**
- * Build inline keyboard buttons for a signal
+ * Build inline keyboard buttons for PRIVATE channel
  */
-function buildSignalButtons(chainId, tokenAddress) {
+function buildPrivateButtons(chainId, tokenAddress) {
   const dex = DEX_LINKS[chainId] || DEX_LINKS[501];
   
   return {
@@ -673,7 +673,26 @@ function buildSignalButtons(chainId, tokenAddress) {
         { text: '📈 DexScreener', url: `${dex.dexscreener}${tokenAddress}` },
       ],
       [
-        { text: '🤖 Buy', callback_data: `buy_${tokenAddress.slice(0, 8)}` }, // For public we will use a different button "Subscribe to Premium" with a link to the premium subscription link of the channel
+        { text: '🤖 Buy', callback_data: `buy_${tokenAddress.slice(0, 8)}` },
+      ],
+    ],
+  };
+}
+
+/**
+ * Build inline keyboard buttons for PUBLIC channel
+ */
+function buildPublicButtons(chainId, tokenAddress) {
+  const dex = DEX_LINKS[chainId] || DEX_LINKS[501];
+  
+  return {
+    inline_keyboard: [
+      [
+        { text: '📊 DexTools', url: `${dex.dextools}${tokenAddress}` },
+        { text: '📈 DexScreener', url: `${dex.dexscreener}${tokenAddress}` },
+      ],
+      [
+        { text: '🔓 Premium Coming Soon!', callback_data: 'premium_soon' },
       ],
     ],
   };
@@ -885,11 +904,16 @@ async function monitorSignals(config) {
       // Pass db for wallet reputation lookup
       const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
       const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
-      const buttons = buildSignalButtons(signal.chainId, signal.tokenAddress);
+      const privateButtons = buildPrivateButtons(signal.chainId, signal.tokenAddress);
+      const publicButtons = buildPublicButtons(signal.chainId, signal.tokenAddress);
+      
+      // Check if signal is a loss (negative score or negative gain)
+      const maxPctGain = parseFloat(signal.maxPctGain) || 0;
+      const isLoss = signalAvgScore < 0 || maxPctGain < 0;
       
       if (botToken && chatId) {
         // Send to PRIVATE channel (full details)
-        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, buttons);
+        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, privateButtons);
         if (result.ok) {
           const replyInfo = replyToMsgId ? ` (reply to ${replyToMsgId})` : '';
           console.log(`   ✅ Posted to PRIVATE (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
@@ -908,9 +932,12 @@ async function monitorSignals(config) {
           }
           
           // Send to PUBLIC channel (redacted) - WITH reply chaining to public messages
-          try {
+          // Skip public channel for losses (negative score or negative gain)
+          if (isLoss) {
+            console.log(`   ⏭️ Skipping PUBLIC (loss signal: score=${signalAvgScore.toFixed(2)}, gain=${maxPctGain.toFixed(1)}%)`);
+          } else try {
             const publicReplyId = db ? getTokenLastMsgId(db, signal.tokenAddress, true) : null;
-            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, buttons);
+            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
             if (publicResult.ok) {
               const pubReplyInfo = publicReplyId ? ` (reply to ${publicReplyId})` : '';
               console.log(`   ✅ Posted to PUBLIC (redacted)${pubReplyInfo}`);
