@@ -103,9 +103,9 @@ function formatTokenLine(performer, chatId) {
   
   // Show ATH/ATL/RUGGED marker based on report type
   let statusMarker = '';
-  if (isRugged) statusMarker = ' 🪦RUGGED';
-  else if (reportType === 'gain') statusMarker = ' 🆕ATH';
-  else if (reportType === 'loss') statusMarker = ' 🆕ATL';
+  if (isRugged) statusMarker = ' 🪦';
+  else if (reportType === 'gain') statusMarker = ' 🆕';
+  else if (reportType === 'loss') statusMarker = ' 🆕';
   
   // Build message link for token symbol (links to last signal)
   const msgLink = buildMessageLink(chatId, token.lastMsgId);
@@ -113,7 +113,7 @@ function formatTokenLine(performer, chatId) {
     ? `<a href="${msgLink}">${token.sym}</a>`
     : token.sym;
   
-  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕ATH (3 sigs)
+  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕 (3 sigs)
   return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${displayMultiplier.toFixed(2)}x)${statusMarker}${signalInfo}`;
 }
 
