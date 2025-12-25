@@ -438,19 +438,9 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     const winRate = parseFloat(w.winRate) || 0;
     const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
     
-    // Get wallet reputation from our tracking (if db available)
-    const rep = db ? getWalletReputation(db, w.walletAddress) : null;
-    const stars = rep?.stars || 0;
-    const starEmoji = stars >= 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : '';
-    
-    // Wallet link + stars + repeat indicator + Entry score
+    // Wallet link + repeat indicator + Entry score
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
     msg += `\n`;
-    
-    // Show stars first if earned
-    if (starEmoji) {
-      msg += `${starEmoji} `;
-    }
     
     msg += `<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
     
@@ -461,11 +451,10 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     // Entry score inline
     if (w.entryScore !== undefined) {
-      msg += ` [${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
+      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
       if (w.entryScore >= 1.5) {
         msg += ` ✨`;
       }
-      msg += `]`;
     }
     
     // KOL badge
@@ -554,18 +543,9 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   for (const w of walletDetails) {
     const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
     
-    // Get wallet reputation
-    const rep = db ? getWalletReputation(db, w.walletAddress) : null;
-    const stars = rep?.stars || 0;
-    const starEmoji = stars >= 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : '';
-    
     // REDACTED: Use short format without link (0x1a...3f4d)
     const redactedAddr = `${w.walletAddress.slice(0, 4)}...${w.walletAddress.slice(-4)}`;
     msg += `\n`;
-    
-    if (starEmoji) {
-      msg += `${starEmoji} `;
-    }
     
     msg += `<code>${redactedAddr}</code>`;
     
@@ -575,21 +555,15 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
     
     // Entry score inline
     if (w.entryScore !== undefined) {
-      msg += ` [${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
+      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
       if (w.entryScore >= 1.5) {
         msg += ` ✨`;
       }
-      msg += `]`;
     }
     
     msg += '\n';
     
-    // OKX metrics - REDACTED: no PnL, just WR
-    const winRate = parseFloat(w.winRate) || 0;
-    const displayWinRate = rep && !rep.isNew && rep.winRate > 0 
-      ? `${rep.winRate}%`
-      : `${winRate.toFixed(0)}%`;
-    msg += `WR ${displayWinRate}\n`;
+    // Public signals: Entry score only
   }
   
   // Timestamp
