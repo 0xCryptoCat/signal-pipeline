@@ -7,18 +7,19 @@
  * Trigger: External cron ping (e.g., every 15 minutes)
  */
 
-import { TelegramDBv4, Keys } from '../lib/telegram-db-v4.js';
+import { TelegramDBv5, CHAIN_IDS } from '../lib/telegram-db-v5.js';
 import { getTokenPrices } from '../lib/price-fetcher.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const PRIVATE_CHANNEL = '-1003474351030';
+const PUBLIC_CHANNEL = '-1003627230339';
 
 // All chains to process
 const CHAINS = [
-  { id: 501, name: 'Solana', tag: 'solana' },
-  { id: 1, name: 'Ethereum', tag: 'ethereum' },
-  { id: 56, name: 'BSC', tag: 'bsc' },
-  { id: 8453, name: 'Base', tag: 'base' },
+  { id: 501, name: 'Solana', tag: 'solana', key: 'sol' },
+  { id: 1, name: 'Ethereum', tag: 'ethereum', key: 'eth' },
+  { id: 56, name: 'BSC', tag: 'bsc', key: 'bsc' },
+  { id: 8453, name: 'Base', tag: 'base', key: 'base' },
 ];
 
 // Performance thresholds for posting updates
@@ -39,9 +40,9 @@ const MIN_LIQUIDITY_USD = 1000;
 // Only post updates for signals newer than this
 const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours (extended from 24)
 
-async function sendTelegramMessage(text, replyToMsgId = null) {
+async function sendTelegramMessage(text, chatId = PRIVATE_CHANNEL, replyToMsgId = null) {
   const body = {
-    chat_id: CHAT_ID,
+    chat_id: chatId,
     text,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
@@ -123,7 +124,7 @@ function formatTokenLine(performer, chatId) {
  * @param {Array} performers - Array of performer objects
  * @param {string} chatId - Telegram chat ID for message links
  */
-function formatAggregatedMessage(performers, chatId) {
+function formatAggregatedMessage(performers, chatId, isPublic = false) {
   if (performers.length === 0) return null;
   
   // Separate gains and losses (rugged tokens go in losses)
@@ -158,27 +159,28 @@ function formatAggregatedMessage(performers, chatId) {
     }
   }
   
+  if (isPublic) {
+    msg += `\n🔓 <i>Full details in private channel</i>`;
+  }
+  
   return msg.trim();
 }
 
 async function processChain(chain, allPerformers) {
   console.log(`\n📊 Processing ${chain.name}...`);
   
-  const db = new TelegramDBv4(BOT_TOKEN, chain.id);
+  const db = new TelegramDBv5(BOT_TOKEN, chain.id);
+  await db.load();
   
-  // Load index from pinned message
-  await db.loadIndex();
+  // Get all tokens from v5 database
+  const tokens = db.getAllTokens();
+  const tokenAddresses = Object.keys(tokens);
   
-  // Get tokens from index (contains essential token data)
-  const indexKey = Keys.index();
-  const index = db.get('index', indexKey);
-  
-  if (!index || !index.trackedTokens || index.trackedTokens.length === 0) {
+  if (tokenAddresses.length === 0) {
     console.log(`   ℹ️ No tracked tokens for ${chain.name}`);
-    return { updated: 0, performers: 0, db: null, index: null, indexKey: null };
+    return { updated: 0, performers: 0, db: null };
   }
   
-  const tokenAddresses = index.trackedTokens.map(t => t.addr);
   console.log(`   📋 ${tokenAddresses.length} tokens to check`);
   
   // Batch fetch current prices
@@ -187,12 +189,9 @@ async function processChain(chain, allPerformers) {
   
   let updated = 0;
   let performerCount = 0;
-  let indexModified = false;
   
-  for (let i = 0; i < index.trackedTokens.length; i++) {
-    const token = index.trackedTokens[i];
-    const addr = token.addr.toLowerCase();
-    const priceData = prices[addr];
+  for (const [addr, token] of Object.entries(tokens)) {
+    const priceData = prices[addr.toLowerCase()];
     
     if (!priceData || priceData.priceUsd <= 0) continue;
     
@@ -233,11 +232,16 @@ async function processChain(chain, allPerformers) {
     const currentMultiplier = currentPrice / entryPrice;
     const signalAge = Date.now() - (token.firstSeen || 0);
     
-    // Update token with current price in index
+    // Update token with current price
     token.pNow = currentPrice;
-    token.multNow = currentMultiplier;
-    token.lastPriceUpdate = Date.now();
-    indexModified = true;
+    token.mult = currentMultiplier;
+    
+    // Update peak multiplier
+    if (isNewATH) {
+      token.peakMult = currentPrice / entryPrice;
+    }
+    
+    db.updateToken(addr, token);
     updated++;
     
     // Determine tier based on CURRENT performance
@@ -308,28 +312,12 @@ async function processChain(chain, allPerformers) {
   
   console.log(`   ✅ Updated ${updated} tokens, ${performerCount} to report`);
   
-  // Build tokenPeaks map for wallet win rate calculation
-  // Store in index so it survives cold starts
-  if (!index.tokenPeaks) index.tokenPeaks = {};
+  // Save database with updated tokens
+  await db.save();
   
-  for (const token of index.trackedTokens) {
-    if (token.pPeak && token.p0) {
-      const prefix = token.addr.slice(0, 8);
-      index.tokenPeaks[prefix] = {
-        peak: token.pPeak / token.p0,  // Peak multiplier
-        entry: token.p0,
-        sym: token.sym,
-      };
-    }
-  }
-  
-  // Return db and index for saving after message is sent
   return { 
     updated, 
-    performers: performerCount, 
-    db: indexModified ? db : null, 
-    index: indexModified ? index : null,
-    indexKey: indexModified ? indexKey : null
+    performers: performerCount
   };
 }
 
@@ -337,7 +325,7 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   console.log(`\n🔄 [Update Prices] Starting at ${new Date().toISOString()}`);
   
-  if (!BOT_TOKEN || !CHAT_ID) {
+  if (!BOT_TOKEN) {
     return res.status(500).json({ ok: false, error: 'Missing Telegram config' });
   }
   
@@ -350,8 +338,6 @@ export default async function handler(req, res) {
   
   // Collect all performers across chains
   const allPerformers = [];
-  // Track chain data for saving after message is sent
-  const chainData = [];
   
   try {
     // Process all chains and collect performers
@@ -361,35 +347,33 @@ export default async function handler(req, res) {
       results.totalUpdated += chainResult.updated;
       results.totalPerformers += chainResult.performers;
       
-      // Keep track of db/index for saving
-      if (chainResult.db) {
-        chainData.push(chainResult);
-      }
-      
       // Small delay between chains
       await new Promise(r => setTimeout(r, 200));
     }
     
     // Send aggregated message if there are performers
     if (allPerformers.length > 0) {
-      const msg = formatAggregatedMessage(allPerformers, CHAT_ID);
-      if (msg) {
-        const result = await sendTelegramMessage(msg);
+      // Send to PRIVATE channel (full details)
+      const privateMsg = formatAggregatedMessage(allPerformers, PRIVATE_CHANNEL, false);
+      if (privateMsg) {
+        const result = await sendTelegramMessage(privateMsg, PRIVATE_CHANNEL);
         if (result.ok) {
-          console.log(`\n📨 Sent aggregated performance update for ${allPerformers.length} tokens`);
+          console.log(`\n📨 Sent performance update to PRIVATE channel (${allPerformers.length} tokens)`);
           results.messageSent = true;
         } else {
-          console.log(`\n❌ Failed to send message: ${result.description}`);
+          console.log(`\n❌ Failed to send to PRIVATE: ${result.description}`);
         }
       }
-    }
-    
-    // Save all chain indexes (mark tokens as postedPerf)
-    for (const { db, index, indexKey } of chainData) {
-      if (db && index && indexKey) {
-        index.lastPriceUpdate = Date.now();
-        await db.update('index', indexKey, index);
-        await db.pinIndex();
+      
+      // Send to PUBLIC channel (redacted wallets)
+      const publicMsg = formatAggregatedMessage(allPerformers, PUBLIC_CHANNEL, true);
+      if (publicMsg) {
+        const result = await sendTelegramMessage(publicMsg, PUBLIC_CHANNEL);
+        if (result.ok) {
+          console.log(`📨 Sent performance update to PUBLIC channel`);
+        } else {
+          console.log(`❌ Failed to send to PUBLIC: ${result.description}`);
+        }
       }
     }
     

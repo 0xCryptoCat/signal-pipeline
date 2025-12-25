@@ -9,7 +9,7 @@
  */
 
 // ============================================================
-// DB INTEGRATION (optional)
+// DB INTEGRATION (v5 - file-based)
 // ============================================================
 
 import {
@@ -23,8 +23,13 @@ import {
   categorizeWallets,
   initializeDB,
   getSeenSignalsFromDB,
+  saveDB,
   pinIndexAfterUpdate,
-} from './lib/db-integration.js';
+} from './lib/db-integration-v5.js';
+
+// Channel IDs
+const PRIVATE_CHANNEL = '-1003474351030';
+const PUBLIC_CHANNEL = '-1003627230339';
 
 // ============================================================
 // CONSTANTS
@@ -485,6 +490,116 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   return msg;
 }
 
+/**
+ * Format a REDACTED signal for public channel
+ * Same as full signal but wallet addresses are shortened (0x1a...3f4d)
+ */
+function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
+  const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
+  const { tokenHistory, walletCategories, db } = options;
+  
+  // Calculate signal average score from wallets
+  const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
+  const signalAvgScore = scoredWallets.length > 0
+    ? scoredWallets.reduce((sum, w) => sum + w.entryScore, 0) / scoredWallets.length
+    : 0;
+  const rating = signalRating(signalAvgScore);
+  
+  // Header with rating
+  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
+  
+  // Token info with embedded link
+  msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)`;
+  
+  // Add signal count if token seen before
+  if (tokenHistory && tokenHistory.signalCount > 0) {
+    const count = tokenHistory.signalCount;
+    const priceChange = tokenHistory.firstPrice > 0 
+      ? ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100)
+      : 0;
+    const priceEmoji = priceChange >= 100 ? '🚀' : priceChange >= 0 ? '📈' : '📉';
+    msg += ` 🔄 <b>${count + 1}x</b>`;
+    if (count > 0 && Math.abs(priceChange) >= 10) {
+      msg += ` ${priceEmoji}${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(0)}%`;
+    }
+  }
+  msg += '\n';
+  
+  msg += `<code>${signal.tokenAddress}</code>\n`;
+  msg += `Age: ${signal.tokenAge}\n\n`;
+  
+  // Signal stats
+  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
+  
+  // Wallet count summary only (no details)
+  if (walletCategories && walletCategories.totalUnique > walletDetails.length) {
+    const newCount = walletCategories.newWallets.length;
+    const repeatCount = walletCategories.repeatWallets.length;
+    const totalUnique = walletCategories.totalUnique;
+    
+    if (repeatCount > 0) {
+      msg += `${newCount} new + ${repeatCount} 🔄 (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+    } else {
+      msg += `${newCount} wallet${newCount > 1 ? 's' : ''} (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+    }
+  } else {
+    msg += `${walletDetails.length} wallet${walletDetails.length > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
+  }
+  
+  // REDACTED wallet details - only show shortened addresses
+  const repeatPrefixes = new Set(
+    (walletCategories?.repeatWallets || []).map(w => w.walletAddress.slice(0, 8))
+  );
+  
+  for (const w of walletDetails) {
+    const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
+    
+    // Get wallet reputation
+    const rep = db ? getWalletReputation(db, w.walletAddress) : null;
+    const stars = rep?.stars || 0;
+    const starEmoji = stars >= 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : '';
+    
+    // REDACTED: Use short format without link (0x1a...3f4d)
+    const redactedAddr = `${w.walletAddress.slice(0, 4)}...${w.walletAddress.slice(-4)}`;
+    msg += `\n`;
+    
+    if (starEmoji) {
+      msg += `${starEmoji} `;
+    }
+    
+    msg += `<code>${redactedAddr}</code>`;
+    
+    if (isRepeat) {
+      msg += ` 🔄`;
+    }
+    
+    // Entry score inline
+    if (w.entryScore !== undefined) {
+      msg += ` [${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
+      if (w.entryScore >= 1.5) {
+        msg += ` ✨`;
+      }
+      msg += `]`;
+    }
+    
+    msg += '\n';
+    
+    // OKX metrics - REDACTED: no PnL, just WR
+    const winRate = parseFloat(w.winRate) || 0;
+    const displayWinRate = rep && !rep.isNew && rep.winRate > 0 
+      ? `${rep.winRate}%`
+      : `${winRate.toFixed(0)}%`;
+    msg += `WR ${displayWinRate}\n`;
+  }
+  
+  // Timestamp
+  const sigId = `${signal.batchId}-${signal.batchIndex}`;
+  msg += `\n<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
+  msg += `\n\n🔓 <i>Full details in private channel</i>`;
+  
+  return msg;
+}
+
 // ============================================================
 // TELEGRAM API
 // ============================================================
@@ -777,13 +892,15 @@ async function monitorSignals(config) {
       // Format and send message (reply to previous signal for same token)
       // Pass db for wallet reputation lookup
       const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
+      const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
       const buttons = buildSignalButtons(signal.chainId, signal.tokenAddress);
       
       if (botToken && chatId) {
+        // Send to PRIVATE channel (full details)
         const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, buttons);
         if (result.ok) {
           const replyInfo = replyToMsgId ? ` (reply to ${replyToMsgId})` : '';
-          console.log(`   ✅ Posted to Telegram (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
+          console.log(`   ✅ Posted to PRIVATE (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
           // Persist signal ID to /tmp for cold start recovery
           await saveSignalId(chainName, signalKey);
           
@@ -796,6 +913,18 @@ async function monitorSignals(config) {
             } catch (dbErr) {
               console.warn(`   ⚠️ DB store failed (non-fatal): ${dbErr.message}`);
             }
+          }
+          
+          // Send to PUBLIC channel (redacted) - no reply chaining needed
+          try {
+            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, null, buttons);
+            if (publicResult.ok) {
+              console.log(`   ✅ Posted to PUBLIC (redacted)`);
+            } else {
+              console.log(`   ⚠️ Public channel error: ${publicResult.description}`);
+            }
+          } catch (pubErr) {
+            console.log(`   ⚠️ Public channel failed (non-fatal): ${pubErr.message}`);
           }
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
@@ -813,9 +942,14 @@ async function monitorSignals(config) {
     await sleep(200);
   }
   
-  // Pin index after batch for cold start recovery
-  if (db && newSignals > 0) {
-    await pinIndexAfterUpdate(db);
+  // Save DB after batch (v5 file-based storage)
+  if (db) {
+    try {
+      await saveDB(db);
+      console.log(`   💾 DB saved`);
+    } catch (err) {
+      console.warn(`   ⚠️ DB save failed: ${err.message}`);
+    }
   }
   
   console.log(`   📊 Processed ${newSignals} new signal(s), skipped ${skippedByScore} by score`);
