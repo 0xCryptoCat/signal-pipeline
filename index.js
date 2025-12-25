@@ -464,11 +464,8 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     msg += '\n';
     
-    // OKX metrics on next line - use our tracked win rate if available
-    const displayWinRate = rep && !rep.isNew && rep.winRate > 0 
-      ? `${rep.winRate}% (${rep.wins}/${rep.totalEntries})`
-      : `${winRate.toFixed(0)}%`;
-    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${displayWinRate}\n`;
+    // OKX metrics on next line
+    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
   }
   
   // Timestamp with hidden signal ID embedded in link (invisible to users)
