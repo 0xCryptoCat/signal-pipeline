@@ -124,9 +124,15 @@ function formatPct(num) {
 function getTokenAge(createTime) {
   const ageMs = Date.now() - parseInt(createTime);
   const hours = ageMs / (1000 * 60 * 60);
+  const days = hours / 24;
+  const weeks = days / 7;
+  const months = days / 30;
+  
   if (hours < 1) return `${Math.floor(hours * 60)}m`;
   if (hours < 24) return `${hours.toFixed(1)}h`;
-  return `${(hours / 24).toFixed(1)}d`;
+  if (days < 7) return `${days.toFixed(1)}d`;
+  if (weeks < 4) return `${weeks.toFixed(1)}w`;
+  return `${months.toFixed(1)}mo`;
 }
 
 function sleep(ms) {
@@ -492,9 +498,9 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     // Stats line: PnL | ROI | WR
     if (rep && !rep.isNew && rep.totalEntries > 0) {
-      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${rep.winRate}% (${rep.wins}/${rep.totalEntries})</code>\n`;
+      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${rep.winRate}%</code>\n\n`;
     } else {
-      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${okxWinRate.toFixed(0)}%</code>\n`;
+      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${okxWinRate.toFixed(0)}%</code>\n\n`;
     }
   }
   
@@ -567,7 +573,7 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   
   msg += `${tokenLine}\n`;
   msg += `<code>${signal.tokenAddress}</code>\n`;
-  msg += `${SEPARATOR}\n`;
+  msg += `\n`;
   
   // ===== STATS BLOCK (code formatted) =====
   msg += `<code>Age  : ${signal.tokenAge}\n`;
@@ -575,13 +581,13 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   msg += `Vol  : ${formatUsd(signal.volumeInSignal)}</code>\n`;
   msg += `${SEPARATOR}\n`;
   
-  // ===== CTA =====
-  msg += `🔓 <i>Full wallet details in premium channel</i>\n`;
-  
   // ===== TIMESTAMP =====
   const sigId = `${signal.batchId}-${signal.batchIndex}`;
   msg += `${SEPARATOR}\n`;
-  msg += `<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
+  msg += `<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>\n`;
+  
+  // ===== CTA =====
+  msg += `<i>Full wallet details in premium channel! Coming soon!</i>`;
   
   return msg;
 }
@@ -667,7 +673,7 @@ function buildSignalButtons(chainId, tokenAddress) {
         { text: '📈 DexScreener', url: `${dex.dexscreener}${tokenAddress}` },
       ],
       [
-        { text: '🤖 Buy', callback_data: `buy_${tokenAddress.slice(0, 8)}` },
+        { text: '🤖 Buy', callback_data: `buy_${tokenAddress.slice(0, 8)}` }, // For public we will use a different button "Subscribe to Premium" with a link to the premium subscription link of the channel
       ],
     ],
   };
