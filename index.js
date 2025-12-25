@@ -356,6 +356,8 @@ async function scoreWalletEntries(walletAddress, chainId, maxTokens = 15) {
 // TELEGRAM FORMATTING (HTML)
 // ============================================================
 
+const SEPARATOR = '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
 /**
  * Format UTC timestamp
  */
@@ -365,14 +367,27 @@ function formatUtcTime() {
 }
 
 /**
- * Format a signal for Telegram (HTML)
- * @param {Object} signal - Signal data
- * @param {Array} walletDetails - Wallet details with scores
- * @param {Object} options - Optional: { tokenHistory, walletCategories, db } from DB
+ * Build a row of score dot emojis for visual representation
+ * Shows up to 11 dots, sorted by score
+ */
+function buildScoreDots(walletDetails) {
+  const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
+  if (scoredWallets.length === 0) return '';
+  
+  // Sort by score descending and take up to 11
+  const sorted = [...scoredWallets]
+    .sort((a, b) => b.entryScore - a.entryScore)
+    .slice(0, 11);
+  
+  return sorted.map(w => scoreEmoji(w.entryScore)).join('');
+}
+
+/**
+ * Format a signal for PRIVATE channel (HTML)
+ * Full wallet details with explorer links
  */
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
-  const dex = DEX_LINKS[signal.chainId] || DEX_LINKS[501];
   const { tokenHistory, walletCategories, db } = options;
   
   // Calculate signal average score from wallets
@@ -382,50 +397,63 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     : 0;
   const rating = signalRating(signalAvgScore);
   
-  // Header with rating
-  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
+  // ===== HEADER =====
+  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji}\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Token info with embedded link
-  msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)`;
+  // ===== WALLET SUMMARY LINE =====
+  const newCount = walletCategories?.newWallets?.length || walletDetails.length;
+  const totalUnique = walletCategories?.totalUnique || walletDetails.length;
+  const repeatCount = walletCategories?.repeatWallets?.length || 0;
   
-  // Add signal count if token seen before
+  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄 2x"
+  let summaryLine = `${newCount} new wallet${newCount !== 1 ? 's' : ''} (${totalUnique} total)`;
+  
+  // Max gain
+  const maxPct = parseFloat(signal.maxPctGain) || 0;
+  if (maxPct !== 0) {
+    const gainEmoji = maxPct >= 0 ? 'up' : 'down';
+    summaryLine += ` │ ${gainEmoji} <b>${formatPct(maxPct)}</b>`;
+  }
+  
+  // Repeat signal count
   if (tokenHistory && tokenHistory.signalCount > 0) {
-    const count = tokenHistory.signalCount;
-    const priceChange = tokenHistory.firstPrice > 0 
-      ? ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100)
-      : 0;
-    const priceEmoji = priceChange >= 100 ? '🚀' : priceChange >= 0 ? '📈' : '📉';
-    msg += ` 🔄 <b>${count + 1}x</b>`;
-    if (count > 0 && Math.abs(priceChange) >= 10) {
-      msg += ` ${priceEmoji}${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(0)}%`;
+    summaryLine += ` │ 🔄 ${tokenHistory.signalCount + 1}x`;
+  }
+  
+  msg += `${summaryLine}\n`;
+  
+  // Score dots row
+  const scoreDots = buildScoreDots(walletDetails);
+  if (scoreDots) {
+    msg += `${scoreDots}\n`;
+  }
+  
+  msg += `${SEPARATOR}\n`;
+  
+  // ===== TOKEN INFO =====
+  // Token name with link, symbol, price change since first signal
+  let tokenLine = `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
+  
+  if (tokenHistory && tokenHistory.firstPrice > 0) {
+    const priceChange = ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100);
+    if (Math.abs(priceChange) >= 5) {
+      const priceEmoji = priceChange >= 0 ? '📈' : '📉';
+      tokenLine += ` │ ${priceEmoji}${formatPct(priceChange)}`;
     }
   }
-  msg += '\n';
   
+  msg += `${tokenLine}\n`;
   msg += `<code>${signal.tokenAddress}</code>\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Chain + Age (DEX links moved to inline buttons)
-  msg += `Age: ${signal.tokenAge}\n\n`;
+  // ===== STATS BLOCK (code formatted) =====
+  msg += `<code>Age  : ${signal.tokenAge}\n`;
+  msg += `MCap : ${formatUsd(signal.mcapAtSignal)}\n`;
+  msg += `Vol  : ${formatUsd(signal.volumeInSignal)}</code>\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Signal stats (MCap, Vol - no price, redundant with DEX links)
-  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
-  
-  // Wallet count - show new vs total if we have categorization
-  if (walletCategories && walletCategories.totalUnique > walletDetails.length) {
-    const newCount = walletCategories.newWallets.length;
-    const repeatCount = walletCategories.repeatWallets.length;
-    const totalUnique = walletCategories.totalUnique;
-    
-    if (repeatCount > 0) {
-      msg += `${newCount} new + ${repeatCount} 🔄 (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-    } else {
-      msg += `${newCount} wallet${newCount > 1 ? 's' : ''} (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-    }
-  } else {
-    msg += `${walletDetails.length} wallet${walletDetails.length > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-  }
-  
-  // Create a set of repeat wallet prefixes for marking
+  // ===== WALLET DETAILS =====
   const repeatPrefixes = new Set(
     (walletCategories?.repeatWallets || []).map(w => w.walletAddress.slice(0, 8))
   );
@@ -441,56 +469,50 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     // Get our tracked reputation data if available
     const rep = db ? getWalletReputation(db, w.walletAddress) : null;
     
-    // Wallet link + repeat indicator + Entry score
+    // Wallet link
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
-    msg += `\n`;
-    
     msg += `<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
     
-    // Mark repeat buyers
+    // Entry score
+    if (w.entryScore !== undefined) {
+      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore >= 0 ? '+' : ''}${w.entryScore.toFixed(2)}`;
+    }
+    
+    // Repeat indicator
     if (isRepeat) {
       msg += ` 🔄`;
     }
     
-    // Entry score inline
-    if (w.entryScore !== undefined) {
-      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
-      if (w.entryScore >= 1.5) {
-        msg += ` ✨`;
-      }
-    }
-    
     // KOL badge
     if (isKol && twitter) {
-      msg += ` 🎤 <a href="https://twitter.com/${twitter}">@${escapeHtml(twitter)}</a>`;
+      msg += ` 🎤 <a href="https://x.com/${twitter}">@${escapeHtml(twitter)}</a>`;
     }
     
     msg += '\n';
     
-    // Stats line: Use our tracked WR if we have entries, otherwise OKX data
-    // Format: PnL | ROI | WR 60% (3/5 entries) or just OKX WR if new
+    // Stats line: PnL | ROI | WR
     if (rep && !rep.isNew && rep.totalEntries > 0) {
-      msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${rep.winRate}% (${rep.wins}/${rep.totalEntries})\n`;
+      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${rep.winRate}% (${rep.wins}/${rep.totalEntries})</code>\n`;
     } else {
-      msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${okxWinRate.toFixed(0)}%\n`;
+      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${okxWinRate.toFixed(0)}%</code>\n`;
     }
   }
   
-  // Timestamp with hidden signal ID embedded in link (invisible to users)
-  // The # anchor contains the sig ID for dedup parsing if needed
+  // ===== TIMESTAMP =====
   const sigId = `${signal.batchId}-${signal.batchIndex}`;
-  msg += `\n<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
+  msg += `${SEPARATOR}\n`;
+  msg += `<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
   
   return msg;
 }
 
 /**
- * Format a REDACTED signal for public channel
- * Same as full signal but wallet addresses are shortened (0x1a...3f4d)
+ * Format a REDACTED signal for PUBLIC channel (HTML)
+ * No wallet addresses or links, just summary stats
  */
 function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
-  const { tokenHistory, walletCategories, db } = options;
+  const { tokenHistory, walletCategories } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -499,82 +521,67 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
     : 0;
   const rating = signalRating(signalAvgScore);
   
-  // Header with rating
-  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${signalAvgScore.toFixed(2)}\n\n`;
+  // ===== HEADER =====
+  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji}\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Token info with embedded link
-  msg += `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> (<code>${escapeHtml(signal.tokenSymbol)}</code>)`;
+  // ===== WALLET SUMMARY LINE =====
+  const newCount = walletCategories?.newWallets?.length || walletDetails.length;
+  const totalUnique = walletCategories?.totalUnique || walletDetails.length;
   
-  // Add signal count if token seen before
+  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄 2x"
+  let summaryLine = `${newCount} new wallet${newCount !== 1 ? 's' : ''} (${totalUnique} total)`;
+  
+  // Max gain
+  const maxPct = parseFloat(signal.maxPctGain) || 0;
+  if (maxPct !== 0) {
+    const gainEmoji = maxPct >= 0 ? 'up' : 'down';
+    summaryLine += ` │ ${gainEmoji} <b>${formatPct(maxPct)}</b>`;
+  }
+  
+  // Repeat signal count
   if (tokenHistory && tokenHistory.signalCount > 0) {
-    const count = tokenHistory.signalCount;
-    const priceChange = tokenHistory.firstPrice > 0 
-      ? ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100)
-      : 0;
-    const priceEmoji = priceChange >= 100 ? '🚀' : priceChange >= 0 ? '📈' : '📉';
-    msg += ` 🔄 <b>${count + 1}x</b>`;
-    if (count > 0 && Math.abs(priceChange) >= 10) {
-      msg += ` ${priceEmoji}${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(0)}%`;
+    summaryLine += ` │ 🔄 ${tokenHistory.signalCount + 1}x`;
+  }
+  
+  msg += `${summaryLine}\n`;
+  
+  // Score dots row
+  const scoreDots = buildScoreDots(walletDetails);
+  if (scoreDots) {
+    msg += `${scoreDots}\n`;
+  }
+  
+  msg += `${SEPARATOR}\n`;
+  
+  // ===== TOKEN INFO =====
+  let tokenLine = `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
+  
+  if (tokenHistory && tokenHistory.firstPrice > 0) {
+    const priceChange = ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100);
+    if (Math.abs(priceChange) >= 5) {
+      const priceEmoji = priceChange >= 0 ? '📈' : '📉';
+      tokenLine += ` │ ${priceEmoji}${formatPct(priceChange)}`;
     }
   }
-  msg += '\n';
   
+  msg += `${tokenLine}\n`;
   msg += `<code>${signal.tokenAddress}</code>\n`;
-  msg += `Age: ${signal.tokenAge}\n\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Signal stats
-  msg += `MCap: ${formatUsd(signal.mcapAtSignal)} | Vol: ${formatUsd(signal.volumeInSignal)}\n`;
+  // ===== STATS BLOCK (code formatted) =====
+  msg += `<code>Age  : ${signal.tokenAge}\n`;
+  msg += `MCap : ${formatUsd(signal.mcapAtSignal)}\n`;
+  msg += `Vol  : ${formatUsd(signal.volumeInSignal)}</code>\n`;
+  msg += `${SEPARATOR}\n`;
   
-  // Wallet count summary only (no details)
-  if (walletCategories && walletCategories.totalUnique > walletDetails.length) {
-    const newCount = walletCategories.newWallets.length;
-    const repeatCount = walletCategories.repeatWallets.length;
-    const totalUnique = walletCategories.totalUnique;
-    
-    if (repeatCount > 0) {
-      msg += `${newCount} new + ${repeatCount} 🔄 (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-    } else {
-      msg += `${newCount} wallet${newCount > 1 ? 's' : ''} (${totalUnique} total) ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-    }
-  } else {
-    msg += `${walletDetails.length} wallet${walletDetails.length > 1 ? 's' : ''} ${signal.maxMultiplier}x (${formatPct(signal.maxPctGain)})\n`;
-  }
+  // ===== CTA =====
+  msg += `🔓 <i>Full wallet details in premium channel</i>\n`;
   
-  // REDACTED wallet details - only show shortened addresses
-  const repeatPrefixes = new Set(
-    (walletCategories?.repeatWallets || []).map(w => w.walletAddress.slice(0, 8))
-  );
-  
-  for (const w of walletDetails) {
-    const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
-    
-    // REDACTED: Use short format without link (0x1a...3f4d)
-    const redactedAddr = `${w.walletAddress.slice(0, 4)}...${w.walletAddress.slice(-4)}`;
-    msg += `\n`;
-    
-    msg += `<code>${redactedAddr}</code>`;
-    
-    if (isRepeat) {
-      msg += ` 🔄`;
-    }
-    
-    // Entry score inline
-    if (w.entryScore !== undefined) {
-      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore.toFixed(2)}`;
-      if (w.entryScore >= 1.5) {
-        msg += ` ✨`;
-      }
-    }
-    
-    msg += '\n';
-    
-    // Public signals: Entry score only
-  }
-  
-  // Timestamp
+  // ===== TIMESTAMP =====
   const sigId = `${signal.batchId}-${signal.batchIndex}`;
-  msg += `\n<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
-  msg += `\n\n🔓 <i>Full details in private channel</i>`;
+  msg += `${SEPARATOR}\n`;
+  msg += `<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>`;
   
   return msg;
 }
