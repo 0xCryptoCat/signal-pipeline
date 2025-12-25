@@ -6,6 +6,9 @@
  * 
  * Trigger: External cron ping (every 30 minutes)
  * 
+ * Query params:
+ * - reset=true: Force reset of leaderboard config (recreate all messages)
+ * 
  * Flow:
  * 1. Load all chain databases (sol, eth, bsc, base)
  * 2. Calculate trending tokens (all chains combined)
@@ -19,7 +22,8 @@ import { TelegramDBv5, LeaderboardManager, CHAIN_IDS } from '../lib/telegram-db-
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export default async function handler(req, res) {
-  console.log('🏆 Starting leaderboard update...');
+  const forceReset = req.query.reset === 'true';
+  console.log(`🏆 Starting leaderboard update...${forceReset ? ' (RESET MODE)' : ''}`);
   const startTime = Date.now();
   
   try {
@@ -37,18 +41,30 @@ export default async function handler(req, res) {
     
     // Update leaderboards
     const leaderboardManager = new LeaderboardManager(BOT_TOKEN);
+    
+    // Force reset if requested - clear config to recreate all messages
+    if (forceReset) {
+      console.log('   🔄 Resetting leaderboard config...');
+      leaderboardManager.config = {
+        leaderboards: {},
+        summaries: { private: null, public: null },
+        updatedAt: Date.now(),
+      };
+    }
+    
     const result = await leaderboardManager.updateAll(dbs);
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`\n✅ Leaderboard update complete in ${elapsed}s`);
-    console.log(`   Top tokens: ${result.topTokens.length}`);
-    console.log(`   Top wallets: ${result.topWallets.length}`);
+    console.log(`   Top tokens: ${result.topTokens}`);
+    console.log(`   Top wallets: ${result.topWallets}`);
     
     return res.status(200).json({
       success: true,
       elapsed: `${elapsed}s`,
-      topTokens: result.topTokens.length,
-      topWallets: result.topWallets.length,
+      reset: forceReset,
+      topTokens: result.topTokens,
+      topWallets: result.topWallets,
     });
     
   } catch (err) {
