@@ -908,18 +908,24 @@ async function monitorSignals(config) {
           if (db) {
             try {
               await storeSignalData(db, signal, walletDetails, signalAvgScore);
-              // Store the message ID for future reply chaining
-              await updateTokenMsgId(db, signal.tokenAddress, result.result.message_id);
+              // Store the private message ID for future reply chaining
+              await updateTokenMsgId(db, signal.tokenAddress, result.result.message_id, false);
             } catch (dbErr) {
               console.warn(`   ⚠️ DB store failed (non-fatal): ${dbErr.message}`);
             }
           }
           
-          // Send to PUBLIC channel (redacted) - no reply chaining needed
+          // Send to PUBLIC channel (redacted) - WITH reply chaining to public messages
           try {
-            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, null, buttons);
+            const publicReplyId = db ? getTokenLastMsgId(db, signal.tokenAddress, true) : null;
+            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, buttons);
             if (publicResult.ok) {
-              console.log(`   ✅ Posted to PUBLIC (redacted)`);
+              const pubReplyInfo = publicReplyId ? ` (reply to ${publicReplyId})` : '';
+              console.log(`   ✅ Posted to PUBLIC (redacted)${pubReplyInfo}`);
+              // Store the public message ID for public reply chaining
+              if (db) {
+                await updateTokenMsgId(db, signal.tokenAddress, publicResult.result.message_id, true);
+              }
             } else {
               console.log(`   ⚠️ Public channel error: ${publicResult.description}`);
             }
