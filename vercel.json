@@ -6,6 +6,7 @@
     "api/poll-eth.js": { "maxDuration": 60 },
     "api/poll-bsc.js": { "maxDuration": 60 },
     "api/poll-base.js": { "maxDuration": 60 },
-    "api/update-prices.js": { "maxDuration": 60 }
+    "api/update-prices.js": { "maxDuration": 60 },
+    "api/update-leaderboard.js": { "maxDuration": 60 }
   }
 }

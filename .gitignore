@@ -4,3 +4,12 @@ node_modules/
 .env
 .env.local
 .history/
+
+# Archived test/audit scripts (moved to _archive/)
+_archive/
+test-*.js
+audit-*.js
+analyze-*.js
+diagnostic.js
+check-index.js
+clear-test-data.js
