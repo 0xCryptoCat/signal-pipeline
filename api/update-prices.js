@@ -100,7 +100,7 @@ function formatTokenLine(performer, chatId) {
   else emoji = '🪦';  // severe loss
   
   const signalCount = token.scnt || 1;
-  const signalInfo = signalCount > 1 ? ` (${signalCount} sigs)` : '';
+  const signalInfo = signalCount > 1 ? ` (${signalCount} 🚨)` : '';
   
   // Show ATH/ATL/RUGGED marker based on report type
   let statusMarker = '';
