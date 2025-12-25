@@ -435,8 +435,11 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     const twitter = w.addressInfo?.twitterHandle;
     const pnl = parseFloat(w.pnl7d) || 0;
     const roi = parseFloat(w.roi) || 0;
-    const winRate = parseFloat(w.winRate) || 0;
+    const okxWinRate = parseFloat(w.winRate) || 0;
     const isRepeat = repeatPrefixes.has(w.walletAddress.slice(0, 8));
+    
+    // Get our tracked reputation data if available
+    const rep = db ? getWalletReputation(db, w.walletAddress) : null;
     
     // Wallet link + repeat indicator + Entry score
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
@@ -464,8 +467,13 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     
     msg += '\n';
     
-    // OKX metrics on next line
-    msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${winRate.toFixed(0)}%\n`;
+    // Stats line: Use our tracked WR if we have entries, otherwise OKX data
+    // Format: PnL | ROI | WR 60% (3/5 entries) or just OKX WR if new
+    if (rep && !rep.isNew && rep.totalEntries > 0) {
+      msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${rep.winRate}% (${rep.wins}/${rep.totalEntries})\n`;
+    } else {
+      msg += `PnL ${formatPnl(pnl)} | ROI ${formatPct(roi)} | WR ${okxWinRate.toFixed(0)}%\n`;
+    }
   }
   
   // Timestamp with hidden signal ID embedded in link (invisible to users)
