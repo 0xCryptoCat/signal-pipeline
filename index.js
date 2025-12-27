@@ -15,6 +15,7 @@
 import {
   storeSignalData,
   updateTokenMsgId,
+  updateTokenSecurity,
   getTokenLastMsgId,
   isSignalSeen,
   getTokenEnhancement,
@@ -26,6 +27,8 @@ import {
   saveDB,
   pinIndexAfterUpdate,
 } from './lib/db-integration-v5.js';
+
+import { fetchSecurity } from './lib/security-fetcher.js';
 
 // Channel IDs
 const PRIVATE_CHANNEL = '-1003474351030';
@@ -394,7 +397,7 @@ function buildScoreDots(walletDetails) {
  */
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
-  const { tokenHistory, walletCategories, db } = options;
+  const { tokenHistory, walletCategories, db, security } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -450,11 +453,23 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   }
   
   msg += `${tokenLine}\n`;
-  msg += `<code>${signal.tokenAddress}</code>\n`;
-  msg += `${SEPARATOR}\n`;
+  msg += `<code>${signal.tokenAddress}</code>\n\n`;
   
   // ===== STATS BLOCK (code formatted) =====
-  msg += `<code>Age  : ${signal.tokenAge}\n`;
+  msg += `<code>`;
+  if (security) {
+    if (security.status === 'UNKNOWN') {
+      msg += `Risk : Unknown\n`;
+    } else {
+      let icon = '✅';
+      if (security.isHoneypot) icon = '🍯';
+      else if (security.status === 'SCAM') icon = '❌';
+      else if (security.status === 'RISK') icon = '⚠️';
+      
+      msg += `Risk : ${security.riskScore}/100 ${icon}\n`;
+    }
+  }
+  msg += `Age  : ${signal.tokenAge}\n`;
   msg += `MCap : ${formatUsd(signal.mcapAtSignal)}\n`;
   msg += `Vol  : ${formatUsd(signal.volumeInSignal)}</code>\n`;
   msg += `${SEPARATOR}\n`;
@@ -497,11 +512,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     msg += '\n';
     
     // Stats line: PnL | ROI | WR
-    if (rep && !rep.isNew && rep.totalEntries > 0) {
-      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${rep.winRate}%</code>\n\n`;
-    } else {
-      msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${okxWinRate.toFixed(0)}%</code>\n\n`;
-    }
+    msg += `<code>PnL ${formatPnl(pnl)} │ ROI ${formatPct(roi)} │ WR ${okxWinRate.toFixed(0)}%</code>\n\n`;
   }
   
   // ===== TIMESTAMP =====
@@ -518,7 +529,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
  */
 function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
-  const { tokenHistory, walletCategories } = options;
+  const { tokenHistory, walletCategories, security } = options;
   
   // Calculate signal average score from wallets
   const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
@@ -583,7 +594,6 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   
   // ===== TIMESTAMP =====
   const sigId = `${signal.batchId}-${signal.batchIndex}`;
-  msg += `${SEPARATOR}\n`;
   msg += `<i><a href="https://t.me/#${sigId}">${formatUtcTime()}</a></i>\n`;
   
   // ===== CTA =====
@@ -873,6 +883,26 @@ async function monitorSignals(config) {
         { scoreWallets }
       );
       
+      // Security Check
+      let security = null;
+      try {
+        security = await fetchSecurity(signal.chainId, signal.tokenAddress);
+        if (security.status === 'SCAM') {
+          console.log(`   🛑 Skipping SCAM token: ${signal.tokenSymbol} (Score: ${security.riskScore})`);
+          
+          // Update DB if token exists (mark as SCAM/RUGGED)
+          if (db) {
+            updateTokenSecurity(db, signal.tokenAddress, 'SCAM');
+          }
+          
+          skippedByScore++; // Count as skipped
+          await saveSignalId(chainName, signalKey);
+          continue;
+        }
+      } catch (err) {
+        console.warn(`   ⚠️ Security check failed: ${err.message}`);
+      }
+
       // Calculate signal average score BEFORE deciding to post
       const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
       const signalAvgScore = scoredWallets.length > 0
@@ -902,8 +932,8 @@ async function monitorSignals(config) {
       
       // Format and send message (reply to previous signal for same token)
       // Pass db for wallet reputation lookup
-      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
-      const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db });
+      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
+      const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
       const privateButtons = buildPrivateButtons(signal.chainId, signal.tokenAddress);
       const publicButtons = buildPublicButtons(signal.chainId, signal.tokenAddress);
       
@@ -923,7 +953,7 @@ async function monitorSignals(config) {
           // Store to Telegram DB for tracking (if enabled)
           if (db) {
             try {
-              await storeSignalData(db, signal, walletDetails, signalAvgScore);
+              await storeSignalData(db, signal, walletDetails, signalAvgScore, security);
               // Store the private message ID for future reply chaining
               await updateTokenMsgId(db, signal.tokenAddress, result.result.message_id, false);
             } catch (dbErr) {

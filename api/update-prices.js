@@ -25,20 +25,22 @@ const CHAINS = [
 // Performance thresholds for posting updates
 const THRESHOLDS = {
   // Gains (positive multipliers)
-  MOON: 2.0,      // 2x = +100% gain
-  ROCKET: 1.5,    // +50% gain  
-  GOOD: 1.25,     // +25% gain
+  GOD: 10.0,      // 10x = +900%
+  MOON: 5.0,      // 5x = +400%
+  PUMP: 2.0,      // 2x = +100%
+  ROCKET: 1.5,    // +50%
+  GOOD: 1.25,     // +25%
   // Losses (multipliers below 1)
   BAD: 0.75,      // -25% loss
   DUMP: 0.5,      // -50% loss
-  RUG: 0.25,      // -75% loss (likely rugged)
+  RUG: 0.25,      // -75% loss
 };
 
 // Minimum liquidity to consider token not rugged (USD)
 const MIN_LIQUIDITY_USD = 1000;
 
 // Only post updates for signals newer than this
-const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours (extended from 24)
+const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
 
 async function sendTelegramMessage(text, chatId = PRIVATE_CHANNEL, replyToMsgId = null) {
   const body = {
@@ -63,25 +65,18 @@ async function sendTelegramMessage(text, chatId = PRIVATE_CHANNEL, replyToMsgId 
 
 /**
  * Build Telegram message link from chat ID and message ID
- * Format: https://t.me/c/{chat_id_without_-100}/{message_id}
  */
 function buildMessageLink(chatId, msgId) {
   if (!chatId || !msgId) return null;
-  // Remove -100 prefix from chat ID for link format
   const cleanChatId = String(chatId).replace(/^-100/, '');
   return `https://t.me/c/${cleanChatId}/${msgId}`;
 }
 
 /**
  * Format a single token line for the aggregated performance message
- * 
- * For GAINS: Shows NEW HIGH marker + multiplier
- * For LOSSES: Shows new ATL marker
- * For RUGGED: Shows skull marker (liquidity dried up)
- * Token symbol links to last signal message if available
  */
 function formatTokenLine(performer, chatId) {
-  const { token, multiplier, chainTag, isNewHigh, isNewLow, reportType, isRugged } = performer;
+  const { token, multiplier, chainTag, isRugged } = performer;
   
   // For rugged tokens: show 0.0x and -100%
   const displayMultiplier = isRugged ? 0 : multiplier;
@@ -90,23 +85,19 @@ function formatTokenLine(performer, chatId) {
   
   // Emoji based on performance
   let emoji;
-  if (isRugged) emoji = '🪦';  // Rugged (tombstone)
+  if (isRugged) emoji = '🪦';
+  else if (multiplier >= THRESHOLDS.GOD) emoji = '🦄';
   else if (multiplier >= THRESHOLDS.MOON) emoji = '🌙';
+  else if (multiplier >= THRESHOLDS.PUMP) emoji = '🚀';
   else if (multiplier >= THRESHOLDS.ROCKET) emoji = '🚀';
   else if (multiplier >= THRESHOLDS.GOOD) emoji = '📈';
-  else if (multiplier >= 1.0) emoji = '➡️';  // flat/small gain
-  else if (multiplier >= THRESHOLDS.BAD) emoji = '📉';
-  else if (multiplier >= THRESHOLDS.DUMP) emoji = '💀';
-  else emoji = '🪦';  // severe loss
+  else if (multiplier >= 1.0) emoji = '➡️';
+  else if (multiplier <= THRESHOLDS.RUG) emoji = '🪦'; // < -75%
+  else if (multiplier <= THRESHOLDS.DUMP) emoji = '💀'; // < -50%
+  else emoji = '📉';
   
   const signalCount = token.scnt || 1;
   const signalInfo = signalCount > 1 ? ` (${signalCount} 🚨)` : '';
-  
-  // Show ATH/ATL/RUGGED marker based on report type
-  let statusMarker = '';
-  if (isRugged) statusMarker = ' 🪦';
-  else if (reportType === 'gain') statusMarker = ' 🆕';
-  else if (reportType === 'loss') statusMarker = ' 🆕';
   
   // Build message link for token symbol (links to last signal)
   const msgLink = buildMessageLink(chatId, token.lastMsgId);
@@ -114,30 +105,27 @@ function formatTokenLine(performer, chatId) {
     ? `<a href="${msgLink}">${token.sym}</a>`
     : token.sym;
   
-  // Format: 🚀 PEPE #solana +150% (2.5x) 🆕 (3 sigs)
-  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${displayMultiplier.toFixed(2)}x)${statusMarker}${signalInfo}`;
+  // Format: 🌙 PIMP #solana +1281% (13.81x) (2 🚨)
+  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${displayMultiplier.toFixed(2)}x)${signalInfo}`;
 }
 
 /**
  * Format aggregated performance message for all tokens
- * Separates gains, losses, and rugged tokens for clarity
- * @param {Array} performers - Array of performer objects
- * @param {string} chatId - Telegram chat ID for message links
  */
 function formatAggregatedMessage(performers, chatId, isPublic = false) {
   if (performers.length === 0) return null;
   
-  // Separate gains and losses (rugged tokens go in losses)
+  // Separate gains and losses
   const gains = performers.filter(p => p.multiplier >= 1.0 && !p.isRugged);
   const losses = performers.filter(p => p.multiplier < 1.0 || p.isRugged);
   
-  // Sort gains by multiplier descending, losses by multiplier ascending
+  // Sort gains by multiplier descending, losses by multiplier ascending (worst first)
   gains.sort((a, b) => b.multiplier - a.multiplier);
   losses.sort((a, b) => a.multiplier - b.multiplier);
   
-  const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.MOON).length;
+  const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.PUMP).length;
   
-  // Header emoji based on overall performance
+  // Header emoji
   let headerEmoji = moonCount > 0 ? '🌙' : gains.length > losses.length ? '📈' : '📊';
   
   const totalCount = gains.length + losses.length;
@@ -145,15 +133,15 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   
   // Gains section
   if (gains.length > 0) {
-    msg += `\n<b>📈 Gains (${gains.length})</b>\n`;
+    msg += `\n📈 <b>Gains (${gains.length})</b>\n`;
     for (const p of gains) {
       msg += formatTokenLine(p, chatId) + '\n';
     }
   }
   
-  // Losses section (includes rugged tokens)
+  // Losses section
   if (losses.length > 0) {
-    msg += `\n<b>📉 Losses (${losses.length})</b>\n`;
+    msg += `\n📉 <b>Losses (${losses.length})</b>\n`;
     for (const p of losses) {
       msg += formatTokenLine(p, chatId) + '\n';
     }
@@ -191,6 +179,9 @@ async function processChain(chain, allPerformers) {
   let performerCount = 0;
   
   for (const [addr, token] of Object.entries(tokens)) {
+    // Skip archived tokens
+    if (token.archived) continue;
+
     const priceData = prices[addr.toLowerCase()];
     
     if (!priceData || priceData.priceUsd <= 0) continue;
@@ -207,6 +198,7 @@ async function processChain(chain, allPerformers) {
     if (isRugged) {
       token.rugged = true;
       token.ruggedAt = token.ruggedAt || Date.now();
+      token.archived = true; // Archive rugged tokens immediately after reporting
     }
     
     // Entry price = first signal price (p0)
@@ -241,43 +233,45 @@ async function processChain(chain, allPerformers) {
       token.peakMult = currentPrice / entryPrice;
     }
     
+    // Archive if dumped > 50% (0.5x)
+    if (currentMultiplier <= 0.5) {
+      token.archived = true;
+    }
+    
     db.updateToken(addr, token);
     updated++;
     
-    // Determine tier based on CURRENT performance
-    let currentTier = 'flat';
-    if (currentMultiplier >= THRESHOLDS.MOON) currentTier = 'moon';
-    else if (currentMultiplier >= THRESHOLDS.ROCKET) currentTier = 'rocket';
-    else if (currentMultiplier >= THRESHOLDS.GOOD) currentTier = 'good';
-    else if (currentMultiplier <= THRESHOLDS.RUG) currentTier = 'rug';
-    else if (currentMultiplier <= THRESHOLDS.DUMP) currentTier = 'dump';
-    else if (currentMultiplier <= THRESHOLDS.BAD) currentTier = 'bad';
-    
-    // Simple reporting logic:
-    // - RUGGED: Report once when token becomes rugged (liquidity dries up)
-    // - GAIN: Report only if NEW ATH (price went higher than ever before) AND not rugged
-    // - LOSS: Report only if NEW ATL (price went lower than ever before) AND not rugged
-    // - Must be in a significant tier (not flat)
-    // - Must be within age window
-    
+    // Reporting Logic
     let shouldReport = false;
     let reportType = null;
     
+    // Check if token has ever "mooned" (pumped > 5% initially)
+    // If it has, we treat it as a winner and ignore subsequent drops
+    const peakMult = (token.pPeak || entryPrice) / entryPrice;
+    const hasMooned = peakMult > 1.05; 
+    
     if (signalAge <= MAX_SIGNAL_AGE_MS) {
       if (newlyRugged) {
-        // RUGGED: Token just got rugged (first time detecting low liquidity)
+        // RUGGED: Token just got rugged
         shouldReport = true;
         reportType = 'rugged';
-      } else if (!isRugged && currentTier !== 'flat') {
-        // Only report ATH/ATL for non-rugged tokens
+      } else if (!isRugged) {
         if (currentMultiplier >= 1.0 && isNewATH) {
-          // GAIN: New all-time high since signal
+          // GAIN: New all-time high
           shouldReport = true;
           reportType = 'gain';
-        } else if (currentMultiplier < 1.0 && isNewATL) {
-          // LOSS: New all-time low since signal
-          shouldReport = true;
-          reportType = 'loss';
+        } else if (currentMultiplier < 1.0) {
+          // LOSS: Only report if it NEVER pumped and hit new ATL
+          // Also report if it's the final "dump" archive message (< 0.5)
+          if (!hasMooned && isNewATL) {
+             shouldReport = true;
+             reportType = 'loss';
+          } else if (currentMultiplier <= 0.5 && !token.lastDumpReported) {
+             // Ensure we report the dump at least once before archiving
+             shouldReport = true;
+             reportType = 'loss';
+             token.lastDumpReported = true;
+          }
         }
       }
     }
@@ -296,9 +290,6 @@ async function processChain(chain, allPerformers) {
         liquidity,
       });
       
-      // Update tracking fields
-      token.lastPerfTier = currentTier;
-      token.lastReportedPrice = currentPrice;
       performerCount++;
       
       const sign = currentMultiplier >= 1 ? '+' : '';
@@ -306,7 +297,7 @@ async function processChain(chain, allPerformers) {
       if (reportType === 'rugged') typeLog = '🪦 RUG';
       else if (reportType === 'gain') typeLog = '📈 ATH';
       else typeLog = '📉 ATL';
-      console.log(`   ${typeLog}: ${token.sym} ${sign}${((currentMultiplier-1)*100).toFixed(0)}% (${currentTier}) liq:$${liquidity.toFixed(0)}`);
+      console.log(`   ${typeLog}: ${token.sym} ${sign}${((currentMultiplier-1)*100).toFixed(0)}% (${currentMultiplier.toFixed(2)}x) liq:$${liquidity.toFixed(0)}`);
     }
   }
   
