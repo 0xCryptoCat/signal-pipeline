@@ -73,6 +73,24 @@ function buildMessageLink(chatId, msgId) {
 }
 
 /**
+ * Format number with K/M/B suffixes
+ */
+function formatCompactNumber(num) {
+  const absNum = Math.abs(num);
+  if (absNum >= 1000000000) return (num / 1000000000).toFixed(1) + 'B';
+  if (absNum >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (absNum >= 1000) return (num / 1000).toFixed(1) + 'K';
+  return num.toFixed(0);
+}
+
+/**
+ * Pad string with spaces to right
+ */
+function padRight(str, len) {
+  return str + ' '.repeat(Math.max(0, len - str.length));
+}
+
+/**
  * Format a single token line for the aggregated performance message
  */
 function formatTokenLine(performer, chatId) {
@@ -80,8 +98,15 @@ function formatTokenLine(performer, chatId) {
   
   // For rugged tokens: show 0.0x and -100%
   const displayMultiplier = isRugged ? 0 : multiplier;
-  const pctChange = isRugged ? -100 : ((multiplier - 1) * 100).toFixed(0);
-  const sign = displayMultiplier >= 1 ? '+' : '';
+  const pctVal = isRugged ? -100 : ((multiplier - 1) * 100);
+  const sign = pctVal >= 0 ? '+' : '';
+  
+  // Format percentage: "+1.7K%" or "-97%"
+  const pctStr = `${sign}${formatCompactNumber(pctVal)}%`;
+  const paddedPct = padRight(pctStr, 7); // Pad to 7 chars
+  
+  // Format multiplier: "(18.65x)"
+  const multStr = `(${displayMultiplier.toFixed(2)}x)`;
   
   // Emoji based on performance
   let emoji;
@@ -97,7 +122,7 @@ function formatTokenLine(performer, chatId) {
   else emoji = '📉';
   
   const signalCount = token.scnt || 1;
-  const signalInfo = signalCount > 1 ? ` (${signalCount} 🚨)` : '';
+  const signalInfo = signalCount > 1 ? ` 🚨x${signalCount}` : '';
   
   // Build message link for token symbol (links to last signal)
   const msgLink = buildMessageLink(chatId, token.lastMsgId);
@@ -105,8 +130,11 @@ function formatTokenLine(performer, chatId) {
     ? `<a href="${msgLink}">${token.sym}</a>`
     : token.sym;
   
-  // Format: 🌙 PIMP #solana +1281% (13.81x) (2 🚨)
-  return `${emoji} <b>${tokenName}</b> #${chainTag} <b>${sign}${pctChange}%</b> (${displayMultiplier.toFixed(2)}x)${signalInfo}`;
+  // Chain tag uppercase
+  const chainLabel = `#${chainTag.toUpperCase()}`;
+  
+  // Format: <code>🦄 +1.7K% (18.65x)</code> #SOL <a>PIMP</a> 🚨x2
+  return `<code>${emoji} ${paddedPct} ${multStr}</code> ${chainLabel} <b>${tokenName}</b>${signalInfo}`;
 }
 
 /**
@@ -129,11 +157,12 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   let headerEmoji = moonCount > 0 ? '🌙' : gains.length > losses.length ? '📈' : '📊';
   
   const totalCount = gains.length + losses.length;
-  let msg = `${headerEmoji} <b>Signal Performance</b> (${totalCount} token${totalCount !== 1 ? 's' : ''})\n`;
+  let msg = `${headerEmoji} <b>Signal Performance</b> (${totalCount} tokens)\n`;
   
   // Gains section
   if (gains.length > 0) {
-    msg += `\n📈 <b>Gains (${gains.length})</b>\n`;
+    msg += `\n📈 <b>Gains</b> (${gains.length})\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     for (const p of gains) {
       msg += formatTokenLine(p, chatId) + '\n';
     }
@@ -141,7 +170,8 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   
   // Losses section
   if (losses.length > 0) {
-    msg += `\n📉 <b>Losses (${losses.length})</b>\n`;
+    msg += `\n📉 <b>Losses</b> (${losses.length})\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     for (const p of losses) {
       msg += formatTokenLine(p, chatId) + '\n';
     }
