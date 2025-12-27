@@ -16,10 +16,10 @@ const PUBLIC_CHANNEL = '-1003627230339';
 
 // All chains to process
 const CHAINS = [
-  { id: 501, name: 'Solana', tag: 'solana', key: 'sol' },
-  { id: 1, name: 'Ethereum', tag: 'ethereum', key: 'eth' },
+  { id: 501, name: 'SOL', tag: 'solana', key: 'sol' },
+  { id: 1, name: 'ETH', tag: 'ethereum', key: 'eth' },
   { id: 56, name: 'BSC', tag: 'bsc', key: 'bsc' },
-  { id: 8453, name: 'Base', tag: 'base', key: 'base' },
+  { id: 8453, name: 'BASE', tag: 'base', key: 'base' },
 ];
 
 // Performance thresholds for posting updates
@@ -103,7 +103,7 @@ function formatTokenLine(performer, chatId) {
   
   // Format percentage: "+1.7K%" or "-97%"
   const pctStr = `${sign}${formatCompactNumber(pctVal)}%`;
-  const paddedPct = padRight(pctStr, 7); // Pad to 7 chars
+  const paddedPct = padRight(pctStr, 5); // Pad to 7 chars
   
   // Format multiplier: "(18.65x)"
   const multStr = `(${displayMultiplier.toFixed(2)}x)`;
@@ -153,11 +153,8 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   
   const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.PUMP).length;
   
-  // Header emoji
-  let headerEmoji = moonCount > 0 ? '🌙' : gains.length > losses.length ? '📈' : '📊';
-  
   const totalCount = gains.length + losses.length;
-  let msg = `${headerEmoji} <b>Signal Performance</b> (${totalCount} tokens)\n`;
+  let msg = `🚨 <b>Signal Performance</b> (${totalCount} tokens)\n`;
   
   // Gains section
   if (gains.length > 0) {
@@ -312,7 +309,7 @@ async function processChain(chain, allPerformers) {
         entryPrice,
         currentPrice,
         multiplier: currentMultiplier,
-        chainTag: chain.tag,
+        chainTag: chain.name,
         isNewHigh: isNewATH,
         isNewLow: isNewATL,
         reportType,

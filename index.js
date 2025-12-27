@@ -50,10 +50,10 @@ const TRENDS = {
 };
 
 const CHAIN_NAMES = {
-  501: 'Solana',
-  1: 'Ethereum',
+  501: 'SOL',
+  1: 'ETH',
   56: 'BSC',
-  8453: 'Base'
+  8453: 'BASE'
 };
 
 const CHAIN_EXPLORERS = {
@@ -415,7 +415,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   const totalUnique = walletCategories?.totalUnique || walletDetails.length;
   const repeatCount = walletCategories?.repeatWallets?.length || 0;
   
-  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄 2x"
+  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄x2"
   let summaryLine = `${newCount} new wallet${newCount !== 1 ? 's' : ''} (${totalUnique} total)`;
   
   // Max gain
@@ -427,7 +427,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   
   // Repeat signal count
   if (tokenHistory && tokenHistory.signalCount > 0) {
-    summaryLine += ` │ 🔄 ${tokenHistory.signalCount + 1}x`;
+    summaryLine += ` │ 🔄x${tokenHistory.signalCount + 1}`;
   }
   
   msg += `${summaryLine}\n`;
@@ -546,7 +546,7 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   const newCount = walletCategories?.newWallets?.length || walletDetails.length;
   const totalUnique = walletCategories?.totalUnique || walletDetails.length;
   
-  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄 2x"
+  // Format: "11 new wallets (14 total) │ up +181.7% │ 🔄x2"
   let summaryLine = `${newCount} new wallet${newCount !== 1 ? 's' : ''} (${totalUnique} total)`;
   
   // Max gain
@@ -558,7 +558,7 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   
   // Repeat signal count
   if (tokenHistory && tokenHistory.signalCount > 0) {
-    summaryLine += ` │ 🔄 ${tokenHistory.signalCount + 1}x`;
+    summaryLine += ` │ 🔄x${tokenHistory.signalCount + 1}`;
   }
   
   msg += `${summaryLine}\n`;
