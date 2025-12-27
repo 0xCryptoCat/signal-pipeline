@@ -45,6 +45,9 @@ export default async function handler(req, res) {
     // Force reset if requested - clear config to recreate all messages
     if (forceReset) {
       console.log('   🔄 Resetting leaderboard config...');
+      await leaderboardManager.loadConfig();
+      await leaderboardManager.unpinOldLeaderboards();
+      
       leaderboardManager.config = {
         leaderboards: {},
         summaries: { private: null, public: null },

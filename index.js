@@ -44,11 +44,6 @@ const SIGNAL_LABELS = {
   '3': 'Whales'
 };
 
-const TRENDS = {
-  1: '🟢 BUY',
-  2: '🔴 SELL'
-};
-
 const CHAIN_NAMES = {
   501: 'SOL',
   1: 'ETH',
