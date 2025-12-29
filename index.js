@@ -1010,12 +1010,23 @@ async function monitorSignals(config) {
         try {
           const tokenData = data.tokenInfo[activity.tokenKey] || {};
           const tokenLogo = tokenData.tokenLogoUrl || tokenData.logoUrl || null;
+          
+          // Collect signal timestamps for chart markers
+          const signalTimestamps = [Date.now()]; // Always include current
+          if (tokenHistory) {
+            if (tokenHistory.firstSeen) signalTimestamps.push(tokenHistory.firstSeen);
+            if (tokenHistory.lastSig) signalTimestamps.push(tokenHistory.lastSig);
+          }
+          // Unique and sort
+          const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
+
           chartBuffer = await generateChart(
             CHAIN_NAMES[signal.chainId]?.toLowerCase() || 'sol',
             signal.tokenSymbol,
             tokenLogo,
             null, // priceData (mock)
-            []    // signalEntries
+            [],   // signalEntries (indices)
+            uniqueTimestamps // signalTimestamps (unix ms)
           );
         } catch (err) {
           console.error('   ⚠️ Chart generation failed:', err.message);

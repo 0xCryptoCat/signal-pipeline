@@ -159,17 +159,18 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   if (gains.length > 0) {
     // Calculate total gains stats
     let totalPctGain = 0;
-    let totalMultiplier = 0;
     
     for (const p of gains) {
       const pct = (p.multiplier - 1) * 100;
       totalPctGain += pct;
-      totalMultiplier += p.multiplier;
     }
     
-    const avgMultiplier = totalMultiplier / gains.length;
+    // Implied multiplier from total percentage gain
+    // e.g. +821% -> 9.2x
+    const impliedMultiplier = (totalPctGain / 100) + 1;
+    
     const totalPctStr = `+${formatCompactNumber(totalPctGain)}%`;
-    const avgMultStr = `(${avgMultiplier.toFixed(1)}x)`;
+    const avgMultStr = `(${impliedMultiplier.toFixed(1)}x)`;
     
     msg += `\n📈 <b>Gains</b> (${gains.length}) ${totalPctStr} ${avgMultStr}\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
