@@ -916,7 +916,7 @@ async function monitorSignals(config) {
     console.log(`   🔔 Processing signal ${activity.id}: ${data.tokenInfo[activity.tokenKey]?.tokenSymbol || 'Unknown'}`);
     
     try {
-      const { signal, walletDetails } = await processSignal(
+      let { signal, walletDetails } = await processSignal(
         activity, 
         data.tokenInfo, 
         data.overviewList,
