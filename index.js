@@ -1022,13 +1022,23 @@ async function monitorSignals(config) {
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
           
           // Fetch real OHLC data
-          // If token is < 2h old, use 1m candles. Otherwise use 5m.
+          // < 30m old: 1s candles
+          // < 2h old: 1m candles
+          // > 2h old: 5m candles
           let priceData = null;
           try {
-            const isYoungToken = signal.tokenAgeRaw && (Date.now() - signal.tokenAgeRaw < 2 * 60 * 60 * 1000);
-            const barSize = isYoungToken ? '1m' : '5m';
-            const limit = isYoungToken ? 120 : 300; // 2h of 1m or 25h of 5m
-            
+            const ageMs = signal.tokenAgeRaw ? (Date.now() - signal.tokenAgeRaw) : 0;
+            let barSize = '5m';
+            let limit = 300;
+
+            if (ageMs < 30 * 60 * 1000) {
+              barSize = '1s';
+              limit = 300; // 5 mins of 1s data
+            } else if (ageMs < 2 * 60 * 60 * 1000) {
+              barSize = '1m';
+              limit = 120; // 2h of 1m data
+            }
+
             console.log(`   📊 Fetching ${barSize} candles for chart (Age: ${signal.tokenAge})`);
             
             const candles = await fetchCandles(signal.chainId, signal.tokenAddress, limit, barSize);
