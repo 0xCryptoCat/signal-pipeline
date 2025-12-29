@@ -173,7 +173,7 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
     const avgMultStr = `(${impliedMultiplier.toFixed(1)}x)`;
     
     msg += `\n📈 <b>Gains</b> (${gains.length}) ${totalPctStr} ${avgMultStr}\n`;
-    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `━━━━━━━━━━━━━━━━━━\n`;
     for (const p of gains) {
       msg += formatTokenLine(p, chatId) + '\n';
     }
@@ -182,7 +182,7 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   // Losses section
   if (losses.length > 0) {
     msg += `\n📉 <b>Losses</b> (${losses.length})\n`;
-    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `━━━━━━━━━━━━━━━━━━\n`;
     for (const p of losses) {
       msg += formatTokenLine(p, chatId) + '\n';
     }

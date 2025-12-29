@@ -361,7 +361,7 @@ async function scoreWalletEntries(walletAddress, chainId, maxTokens = 15) {
 // TELEGRAM FORMATTING (HTML)
 // ============================================================
 
-const SEPARATOR = '━━━━━━━━━━━━━━━━━━━━━'; 
+const SEPARATOR = '━━━━━━━━━━━━━━━━━━'; 
 
 /**
  * Format UTC timestamp
