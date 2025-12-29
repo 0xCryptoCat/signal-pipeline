@@ -232,8 +232,8 @@ async function fetchTradingHistory(chainId, walletAddress, limit = 30) {
   return allTokens.slice(0, limit);
 }
 
-async function fetchCandles(chainId, tokenAddress, limit = 300) {
-  const url = `${ENDPOINTS.candles}?chainId=${chainId}&address=${tokenAddress}&bar=15m&limit=${limit}&t=${Date.now()}`;
+async function fetchCandles(chainId, tokenAddress, limit = 300, bar = '15m') {
+  const url = `${ENDPOINTS.candles}?chainId=${chainId}&address=${tokenAddress}&bar=${bar}&limit=${limit}&t=${Date.now()}`;
   
   try {
     const data = await fetchJson(url);
@@ -1020,13 +1020,31 @@ async function monitorSignals(config) {
           // Unique and sort
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
           
+          // Fetch real OHLC data (5m candles for ~24h history)
+          let priceData = null;
+          try {
+            const candles = await fetchCandles(signal.chainId, signal.tokenAddress, 300, '5m');
+            if (candles && candles.length > 0) {
+              // Sort by timestamp ascending
+              candles.sort((a, b) => a.timestamp - b.timestamp);
+              // Map to {x, y} format
+              priceData = candles.map(c => ({
+                x: c.timestamp,
+                y: c.close // Use close price
+              }));
+              console.log(`   📊 Fetched ${priceData.length} candles for chart`);
+            }
+          } catch (err) {
+            console.warn(`   ⚠️ Failed to fetch candles for chart: ${err.message}`);
+          }
+          
           console.log(`   📊 Generating chart for ${signal.tokenSymbol} with timestamps:`, uniqueTimestamps);
 
           chartBuffer = await generateChart(
             CHAIN_NAMES[signal.chainId]?.toLowerCase() || 'sol',
             signal.tokenSymbol,
             tokenLogo,
-            null, // priceData (mock)
+            priceData, // Pass real data
             [],   // signalEntries (indices)
             uniqueTimestamps // signalTimestamps (unix ms)
           );
