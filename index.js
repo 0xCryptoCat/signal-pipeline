@@ -28,6 +28,7 @@ import {
   pinIndexAfterUpdate,
 } from './lib/db-integration-v5.js';
 
+import { generateChart } from './lib/chart-generator.js';
 import { fetchSecurity } from './lib/security-fetcher.js';
 
 // Channel IDs
@@ -747,6 +748,36 @@ async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null, 
   return res.json();
 }
 
+async function sendTelegramPhoto(botToken, chatId, photoBuffer, caption, replyToMsgId = null, inlineKeyboard = null) {
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+  
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+  formData.append('caption', caption);
+  formData.append('parse_mode', 'HTML');
+  // formData.append('disable_web_page_preview', 'true'); // Not supported for photos
+  
+  // Append photo buffer
+  const blob = new Blob([photoBuffer], { type: 'image/png' });
+  formData.append('photo', blob, 'chart.png');
+
+  if (replyToMsgId) {
+    formData.append('reply_to_message_id', replyToMsgId);
+    formData.append('allow_sending_without_reply', 'true');
+  }
+  
+  if (inlineKeyboard) {
+    formData.append('reply_markup', JSON.stringify(inlineKeyboard));
+  }
+  
+  const res = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+  
+  return res.json();
+}
+
 // ============================================================
 // MAIN PIPELINE
 // ============================================================
@@ -965,8 +996,30 @@ async function monitorSignals(config) {
       const isLoss = signalAvgScore < 0 || maxPctGain < 0;
       
       if (botToken && chatId) {
+        // Generate Chart
+        let chartBuffer = null;
+        try {
+          const tokenData = data.tokenInfo[activity.tokenKey] || {};
+          const tokenLogo = tokenData.tokenLogoUrl || tokenData.logoUrl || null;
+          chartBuffer = await generateChart(
+            CHAIN_NAMES[signal.chainId]?.toLowerCase() || 'sol',
+            signal.tokenSymbol,
+            tokenLogo,
+            null, // priceData (mock)
+            []    // signalEntries
+          );
+        } catch (err) {
+          console.error('   ⚠️ Chart generation failed:', err.message);
+        }
+
         // Send to PRIVATE channel (full details)
-        const result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, privateButtons);
+        let result;
+        if (chartBuffer) {
+          result = await sendTelegramPhoto(botToken, chatId, chartBuffer, msg, replyToMsgId, privateButtons);
+        } else {
+          result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, privateButtons);
+        }
+
         if (result.ok) {
           const replyInfo = replyToMsgId ? ` (reply to ${replyToMsgId})` : '';
           console.log(`   ✅ Posted to PRIVATE (avgScore: ${signalAvgScore.toFixed(2)})${replyInfo}`);
@@ -990,7 +1043,13 @@ async function monitorSignals(config) {
             console.log(`   ⏭️ Skipping PUBLIC (loss signal: score=${signalAvgScore.toFixed(2)}, gain=${maxPctGain.toFixed(1)}%)`);
           } else try {
             const publicReplyId = db ? getTokenLastMsgId(db, signal.tokenAddress, true) : null;
-            const publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
+            let publicResult;
+            if (chartBuffer) {
+              publicResult = await sendTelegramPhoto(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
+            } else {
+              publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
+            }
+
             if (publicResult.ok) {
               const pubReplyInfo = publicReplyId ? ` (reply to ${publicReplyId})` : '';
               console.log(`   ✅ Posted to PUBLIC (redacted)${pubReplyInfo}`);
