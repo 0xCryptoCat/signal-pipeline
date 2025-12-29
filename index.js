@@ -1019,6 +1019,8 @@ async function monitorSignals(config) {
           }
           // Unique and sort
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
+          
+          console.log(`   📊 Generating chart for ${signal.tokenSymbol} with timestamps:`, uniqueTimestamps);
 
           chartBuffer = await generateChart(
             CHAIN_NAMES[signal.chainId]?.toLowerCase() || 'sol',
