@@ -806,6 +806,7 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
     tokenName: tokenData.tokenName || 'Unknown',
     tokenSymbol: tokenData.tokenSymbol || '???',
     tokenAge: tokenData.tokenCreateTime ? getTokenAge(tokenData.tokenCreateTime) : 'Unknown',
+    tokenAgeRaw: tokenData.tokenCreateTime ? parseInt(tokenData.tokenCreateTime) : 0,
     priceAtSignal: activity.price,
     mcapAtSignal: activity.mcap,
     volumeInSignal: activity.volume,
@@ -1020,10 +1021,17 @@ async function monitorSignals(config) {
           // Unique and sort
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
           
-          // Fetch real OHLC data (5m candles for ~24h history)
+          // Fetch real OHLC data
+          // If token is < 2h old, use 1m candles. Otherwise use 5m.
           let priceData = null;
           try {
-            const candles = await fetchCandles(signal.chainId, signal.tokenAddress, 300, '5m');
+            const isYoungToken = signal.tokenAgeRaw && (Date.now() - signal.tokenAgeRaw < 2 * 60 * 60 * 1000);
+            const barSize = isYoungToken ? '1m' : '5m';
+            const limit = isYoungToken ? 120 : 300; // 2h of 1m or 25h of 5m
+            
+            console.log(`   📊 Fetching ${barSize} candles for chart (Age: ${signal.tokenAge})`);
+            
+            const candles = await fetchCandles(signal.chainId, signal.tokenAddress, limit, barSize);
             if (candles && candles.length > 0) {
               // Sort by timestamp ascending
               candles.sort((a, b) => a.timestamp - b.timestamp);
