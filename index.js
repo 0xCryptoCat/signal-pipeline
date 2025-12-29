@@ -390,6 +390,14 @@ function buildScoreDots(walletDetails) {
  * Format a signal for PRIVATE channel (HTML)
  * Full wallet details with explorer links
  */
+function getContextTitle(score) {
+  if (score >= 1.5) return 'Pre-Pump';
+  if (score >= 0.5) return 'Momentum';
+  if (score >= -0.5) return 'Dip-Buy';
+  if (score >= -1.5) return 'DCA';
+  return 'Top Blast';
+}
+
 function formatSignalMessage(signal, walletDetails, options = {}) {
   const explorer = CHAIN_EXPLORERS[signal.chainId] || CHAIN_EXPLORERS[501];
   const { tokenHistory, walletCategories, db, security } = options;
@@ -400,9 +408,12 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     ? scoredWallets.reduce((sum, w) => sum + w.entryScore, 0) / scoredWallets.length
     : 0;
   const rating = signalRating(signalAvgScore);
+  const contextTitle = getContextTitle(signalAvgScore);
   
   // ===== HEADER =====
-  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji}\n`;
+  const isNewToken = !tokenHistory || !tokenHistory.signalCount || tokenHistory.signalCount === 0;
+  const signalEmoji = isNewToken ? '🆕' : '🚨';
+  let msg = `#${signal.chainName} ${signalEmoji} <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${contextTitle}\n`;
   msg += `${SEPARATOR}\n`;
   
   // ===== WALLET SUMMARY LINE =====
@@ -437,7 +448,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   
   // ===== TOKEN INFO =====
   // Token name with link, symbol, price change since first signal
-  let tokenLine = `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
+  let tokenLine = `<b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
   
   if (tokenHistory && tokenHistory.firstPrice > 0) {
     const priceChange = ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100);
@@ -532,9 +543,12 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
     ? scoredWallets.reduce((sum, w) => sum + w.entryScore, 0) / scoredWallets.length
     : 0;
   const rating = signalRating(signalAvgScore);
+  const contextTitle = getContextTitle(signalAvgScore);
   
   // ===== HEADER =====
-  let msg = `#${signal.chainName} 🚨 <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji}\n`;
+  const isNewToken = !tokenHistory || !tokenHistory.signalCount || tokenHistory.signalCount === 0;
+  const signalEmoji = isNewToken ? '🆕' : '🚨';
+  let msg = `#${signal.chainName} ${signalEmoji} <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${contextTitle}\n`;
   msg += `${SEPARATOR}\n`;
   
   // ===== WALLET SUMMARY LINE =====
@@ -567,7 +581,7 @@ function formatRedactedSignalMessage(signal, walletDetails, options = {}) {
   msg += `${SEPARATOR}\n`;
   
   // ===== TOKEN INFO =====
-  let tokenLine = `🪙 <b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
+  let tokenLine = `<b><a href="${explorer.token}${signal.tokenAddress}">${escapeHtml(signal.tokenName)}</a></b> ($${escapeHtml(signal.tokenSymbol)})`;
   
   if (tokenHistory && tokenHistory.firstPrice > 0) {
     const priceChange = ((parseFloat(signal.priceAtSignal) / tokenHistory.firstPrice - 1) * 100);
@@ -898,6 +912,32 @@ async function monitorSignals(config) {
         console.warn(`   ⚠️ Security check failed: ${err.message}`);
       }
 
+      // Get token history and categorize wallets EARLY (for filtering)
+      let tokenHistory = null;
+      let replyToMsgId = null;
+      let walletCategories = null;
+      
+      if (db) {
+        tokenHistory = getTokenEnhancement(db, signal.tokenAddress);
+        // Get previous message ID for reply chaining
+        replyToMsgId = getTokenLastMsgId(db, signal.tokenAddress);
+        // Categorize wallets as new vs repeat
+        walletCategories = categorizeWallets(db, signal.tokenAddress, walletDetails);
+        
+        // FILTER: Only keep NEW wallets for this signal
+        // This prevents old wallets from skewing the score or re-triggering signals
+        if (walletCategories && walletCategories.newWallets) {
+           // If we have new wallets, use ONLY them for scoring and display
+           // If all wallets are repeats, this becomes empty and will be skipped by minScore check
+           walletDetails = walletCategories.newWallets;
+           
+           // Update signal wallet count to reflect filtered list
+           signal.walletCount = walletDetails.length;
+           
+           console.log(`   👥 Filtered wallets: ${walletDetails.length} new (${walletCategories.repeatWallets.length} repeats removed)`);
+        }
+      }
+
       // Calculate signal average score BEFORE deciding to post
       const scoredWallets = walletDetails.filter(w => w.entryScore !== undefined);
       const signalAvgScore = scoredWallets.length > 0
@@ -911,18 +951,6 @@ async function monitorSignals(config) {
         // Still persist so we don't re-process on cold start
         await saveSignalId(chainName, signalKey);
         continue;
-      }
-      
-      // Get token history for repeat signal indicator
-      let tokenHistory = null;
-      let replyToMsgId = null;
-      let walletCategories = null;
-      if (db) {
-        tokenHistory = getTokenEnhancement(db, signal.tokenAddress);
-        // Get previous message ID for reply chaining
-        replyToMsgId = getTokenLastMsgId(db, signal.tokenAddress);
-        // Categorize wallets as new vs repeat
-        walletCategories = categorizeWallets(db, signal.tokenAddress, walletDetails);
       }
       
       // Format and send message (reply to previous signal for same token)

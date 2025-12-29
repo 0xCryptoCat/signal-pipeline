@@ -41,6 +41,7 @@ const MIN_LIQUIDITY_USD = 1000;
 
 // Only post updates for signals newer than this
 const MAX_SIGNAL_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+const MAX_TRACKING_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for winners
 
 async function sendTelegramMessage(text, chatId = PRIVATE_CHANNEL, replyToMsgId = null) {
   const body = {
@@ -260,8 +261,21 @@ async function processChain(chain, allPerformers) {
       token.peakMult = currentPrice / entryPrice;
     }
     
-    // Archive if dumped > 50% (0.5x)
-    if (currentMultiplier <= 0.5) {
+    // Archive Logic
+    // 1. Hard Dump: 50% drop from ATH
+    const peakPrice = token.pPeak || entryPrice;
+    const dropFromPeak = (peakPrice - currentPrice) / peakPrice;
+    if (dropFromPeak >= 0.5) {
+      token.archived = true;
+    }
+    
+    // 2. Time Limit: 
+    // - Winners (> entry): Track for 7 days
+    // - Losers (< entry): Track for 48 hours
+    const isWinner = currentMultiplier >= 1.0;
+    const maxAge = isWinner ? MAX_TRACKING_AGE_MS : MAX_SIGNAL_AGE_MS;
+    
+    if (signalAge > maxAge) {
       token.archived = true;
     }
     

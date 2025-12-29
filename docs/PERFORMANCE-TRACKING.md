@@ -41,7 +41,7 @@ Track signal performance over time to:
 |------------|-------|--------------|--------------|
 | 2x | 🚀 | Update | First time hitting 2x |
 | 3x | 🔥 | Update | First time hitting 3x |
-| 5x | 💎 | Update | First time hitting 5x |
+| 5x | ­🔷 | Update | First time hitting 5x |
 | 10x | 🌙 | Update | First time hitting 10x |
 | 0.5x | 📉 | Warning | Dropped 50% from entry |
 | 0.25x | ⚠️ | Alert | Dropped 75% from entry |
