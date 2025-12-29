@@ -1016,7 +1016,13 @@ async function monitorSignals(config) {
         let result;
         if (chartBuffer) {
           result = await sendTelegramPhoto(botToken, chatId, chartBuffer, msg, replyToMsgId, privateButtons);
-        } else {
+        }
+        
+        // Fallback to text if photo failed or no chart
+        if (!result || !result.ok) {
+          if (result && !result.ok) {
+            console.warn(`   ⚠️ Private photo failed (${result.description}), falling back to text...`);
+          }
           result = await sendTelegramMessage(botToken, chatId, msg, replyToMsgId, privateButtons);
         }
 
@@ -1044,9 +1050,17 @@ async function monitorSignals(config) {
           } else try {
             const publicReplyId = db ? getTokenLastMsgId(db, signal.tokenAddress, true) : null;
             let publicResult;
+            
+            // Try sending with photo first
             if (chartBuffer) {
-              publicResult = await sendTelegramPhoto(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
-            } else {
+              publicResult = await sendTelegramPhoto(botToken, PUBLIC_CHANNEL, chartBuffer, redactedMsg, publicReplyId, publicButtons);
+            }
+            
+            // Fallback to text if photo failed or no chart
+            if (!publicResult || !publicResult.ok) {
+              if (publicResult && !publicResult.ok) {
+                console.warn(`   ⚠️ Public photo failed (${publicResult.description}), falling back to text...`);
+              }
               publicResult = await sendTelegramMessage(botToken, PUBLIC_CHANNEL, redactedMsg, publicReplyId, publicButtons);
             }
 
