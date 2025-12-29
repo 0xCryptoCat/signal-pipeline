@@ -897,7 +897,16 @@ async function monitorSignals(config) {
   // Sort by ID descending to process newest first
   const sortedActivities = [...data.activityList].sort((a, b) => b.id - a.id);
   
+  const startTime = Date.now();
+  const TIMEOUT_LIMIT = 45000; // 45 seconds (leave 15s buffer for Vercel 60s limit)
+
   for (const activity of sortedActivities) {
+    // Timeout Guard
+    if (Date.now() - startTime > TIMEOUT_LIMIT) {
+      console.warn(`   ⏱️ Time limit reached (${TIMEOUT_LIMIT}ms), stopping processing to avoid timeout. Remaining signals will be picked up next run.`);
+      break;
+    }
+
     const signalKey = `${activity.batchId}-${activity.batchIndex}`;
     
     // In-memory + persisted + DB dedup

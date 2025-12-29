@@ -152,14 +152,26 @@ function formatAggregatedMessage(performers, chatId, isPublic = false) {
   gains.sort((a, b) => b.multiplier - a.multiplier);
   losses.sort((a, b) => a.multiplier - b.multiplier);
   
-  const moonCount = gains.filter(p => p.multiplier >= THRESHOLDS.PUMP).length;
-  
   const totalCount = gains.length + losses.length;
   let msg = `🚨 <b>Signal Performance</b> (${totalCount} tokens)\n`;
   
   // Gains section
   if (gains.length > 0) {
-    msg += `\n📈 <b>Gains</b> (${gains.length})\n`;
+    // Calculate total gains stats
+    let totalPctGain = 0;
+    let totalMultiplier = 0;
+    
+    for (const p of gains) {
+      const pct = (p.multiplier - 1) * 100;
+      totalPctGain += pct;
+      totalMultiplier += p.multiplier;
+    }
+    
+    const avgMultiplier = totalMultiplier / gains.length;
+    const totalPctStr = `+${formatCompactNumber(totalPctGain)}%`;
+    const avgMultStr = `(${avgMultiplier.toFixed(1)}x)`;
+    
+    msg += `\n📈 <b>Gains</b> (${gains.length}) ${totalPctStr} ${avgMultStr}\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     for (const p of gains) {
       msg += formatTokenLine(p, chatId) + '\n';
