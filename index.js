@@ -1015,7 +1015,12 @@ async function monitorSignals(config) {
         // Send to PRIVATE channel (full details)
         let result;
         if (chartBuffer) {
-          result = await sendTelegramPhoto(botToken, chatId, chartBuffer, msg, replyToMsgId, privateButtons);
+          try {
+            result = await sendTelegramPhoto(botToken, chatId, chartBuffer, msg, replyToMsgId, privateButtons);
+          } catch (e) {
+            console.warn(`   ⚠️ Private photo exception: ${e.message}`);
+            result = null;
+          }
         }
         
         // Fallback to text if photo failed or no chart
@@ -1053,7 +1058,12 @@ async function monitorSignals(config) {
             
             // Try sending with photo first
             if (chartBuffer) {
-              publicResult = await sendTelegramPhoto(botToken, PUBLIC_CHANNEL, chartBuffer, redactedMsg, publicReplyId, publicButtons);
+              try {
+                publicResult = await sendTelegramPhoto(botToken, PUBLIC_CHANNEL, chartBuffer, redactedMsg, publicReplyId, publicButtons);
+              } catch (e) {
+                console.warn(`   ⚠️ Public photo exception: ${e.message}`);
+                publicResult = null;
+              }
             }
             
             // Fallback to text if photo failed or no chart
