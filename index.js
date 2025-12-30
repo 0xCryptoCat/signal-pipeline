@@ -1017,6 +1017,12 @@ async function monitorSignals(config) {
           if (tokenHistory) {
             if (tokenHistory.firstSeen) signalTimestamps.push(tokenHistory.firstSeen);
             if (tokenHistory.lastSig) signalTimestamps.push(tokenHistory.lastSig);
+            // Add all historical signals
+            if (tokenHistory.signals && Array.isArray(tokenHistory.signals)) {
+              tokenHistory.signals.forEach(s => {
+                if (s.time) signalTimestamps.push(s.time);
+              });
+            }
           }
           // Unique and sort
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
