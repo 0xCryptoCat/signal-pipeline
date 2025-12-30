@@ -512,8 +512,29 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     }
     
     // KOL badge
-    if (isKol && twitter) {
-      msg += ` 🎤 <a href="https://x.com/${twitter}">@${escapeHtml(twitter)}</a>`;
+    if (isKol) {
+      let handle = twitter;
+      let url = w.addressInfo?.kolTwitterLink; // Try to get direct link if available
+
+      // If no direct link, construct it from handle
+      if (!url && handle) {
+        // Clean handle: remove @, remove full URL parts if present
+        // e.g. "https://twitter.com/user" -> "user"
+        // e.g. "@user" -> "user"
+        const cleanHandle = handle.replace(/^@/, '').replace(/https?:\/\/(www\.)?(twitter|x)\.com\//, '').split('?')[0];
+        
+        if (cleanHandle) {
+          url = `https://x.com/${cleanHandle}`;
+          // Use clean handle for display if the original was a URL
+          if (handle.includes('http')) handle = cleanHandle;
+        }
+      }
+
+      if (url && handle) {
+        // Ensure handle doesn't start with @ for display (we add it manually)
+        const displayHandle = handle.replace(/^@/, '').replace(/https?:\/\/(www\.)?(twitter|x)\.com\//, '');
+        msg += ` 🎤 <a href="${url}">@${escapeHtml(displayHandle)}</a>`;
+      }
     }
     
     msg += '\n';
@@ -1028,24 +1049,39 @@ async function monitorSignals(config) {
           const uniqueTimestamps = [...new Set(signalTimestamps)].sort((a, b) => a - b);
           
           // Fetch real OHLC data
-          // < 30m old: 1s candles
-          // < 2h old: 1m candles
-          // > 2h old: 5m candles
+          // Determine bar size based on HISTORY DURATION, not just token age
+          // We want to show all signals on the chart
           let priceData = null;
           try {
-            const ageMs = signal.tokenAgeRaw ? (Date.now() - signal.tokenAgeRaw) : 0;
+            const now = Date.now();
+            const earliestSignal = uniqueTimestamps[0] || now;
+            const historyDuration = now - earliestSignal;
+            const tokenAge = signal.tokenAgeRaw ? (now - signal.tokenAgeRaw) : 0;
+            
+            // Default settings
             let barSize = '5m';
-            let limit = 300;
+            let limit = 300; // OKX max is often 100-300, let's try to fit history
 
-            if (ageMs < 30 * 60 * 1000) {
-              barSize = '1s';
-              limit = 300; // 5 mins of 1s data
-            } else if (ageMs < 2 * 60 * 60 * 1000) {
-              barSize = '1m';
-              limit = 120; // 2h of 1m data
+            // Logic to select bar size to fit history into ~100-300 candles
+            // 1s candles: 300 = 5 mins
+            // 1m candles: 300 = 5 hours
+            // 5m candles: 300 = 25 hours
+            // 15m candles: 300 = 75 hours (3 days)
+            // 1H candles: 300 = 12.5 days
+            
+            if (historyDuration < 5 * 60 * 1000 && tokenAge < 30 * 60 * 1000) {
+              barSize = '1s'; // Very fresh
+            } else if (historyDuration < 4 * 60 * 60 * 1000) {
+              barSize = '1m'; // Up to 4 hours history
+            } else if (historyDuration < 24 * 60 * 60 * 1000) {
+              barSize = '5m'; // Up to 24 hours
+            } else if (historyDuration < 3 * 24 * 60 * 60 * 1000) {
+              barSize = '15m'; // Up to 3 days
+            } else {
+              barSize = '1H'; // Long history
             }
 
-            console.log(`   📊 Fetching ${barSize} candles for chart (Age: ${signal.tokenAge})`);
+            console.log(`   📊 Fetching ${barSize} candles for chart (History: ${(historyDuration/60000).toFixed(0)}m)`);
             
             const candles = await fetchCandles(signal.chainId, signal.tokenAddress, limit, barSize);
             if (candles && candles.length > 0) {
