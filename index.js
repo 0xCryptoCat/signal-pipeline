@@ -742,6 +742,48 @@ function buildPublicButtons(chainId, tokenAddress) {
   };
 }
 
+// ============================================================
+// TRADING SIMULATOR INTEGRATION
+// ============================================================
+
+/**
+ * Send signal to trading simulator for paper trading
+ */
+async function sendToSimulator(simulatorUrl, signal, avgScore, chainName) {
+  if (!simulatorUrl) return null;
+  
+  try {
+    const payload = {
+      tokenAddress: signal.tokenAddress,
+      chain: chainName,
+      symbol: signal.tokenSymbol,
+      entryPrice: parseFloat(signal.priceAtSignal) || 0,
+      score: avgScore,
+    };
+    
+    const response = await fetch(`${simulatorUrl}/api/new-signal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    
+    const result = await response.json();
+    
+    if (result.status === 'ok') {
+      console.log(`   🎯 Simulator: Position opened for ${signal.tokenSymbol}`);
+    } else if (result.message?.includes('already exists')) {
+      console.log(`   🎯 Simulator: Position already exists for ${signal.tokenSymbol}`);
+    } else {
+      console.log(`   ⚠️ Simulator: ${result.error || result.message || 'Unknown response'}`);
+    }
+    
+    return result;
+  } catch (err) {
+    console.log(`   ⚠️ Simulator call failed (non-fatal): ${err.message}`);
+    return null;
+  }
+}
+
 async function sendTelegramMessage(botToken, chatId, text, replyToMsgId = null, inlineKeyboard = null) {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   
@@ -879,6 +921,8 @@ async function monitorSignals(config) {
     minScore = 0,            // Only post signals with avgScore > this
     seenSignals = new Set(), // In-memory dedup (per invocation)
     useDB = false,           // Enable Telegram DB storage
+    simulatorUrl = null,     // Trading simulator API URL (optional)
+    simulatorMinScore = 0.3, // Only send to simulator if avgScore >= this
   } = config;
   
   const chainName = CHAIN_NAMES[chainId] || `Chain${chainId}`;
@@ -1205,6 +1249,11 @@ async function monitorSignals(config) {
             }
           } catch (pubErr) {
             console.log(`   ⚠️ Public channel failed (non-fatal): ${pubErr.message}`);
+          }
+          
+          // Send to Trading Simulator (if configured and score passes threshold)
+          if (simulatorUrl && signalAvgScore >= simulatorMinScore) {
+            await sendToSimulator(simulatorUrl, signal, signalAvgScore, chainName);
           }
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
