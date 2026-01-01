@@ -30,6 +30,7 @@ import {
 
 import { generateChart } from './lib/chart-generator.js';
 import { fetchSecurity } from './lib/security-fetcher.js';
+import { getTokenPrice } from './lib/price-fetcher.js';
 
 // Channel IDs
 const PRIVATE_CHANNEL = '-1003474351030';
@@ -501,9 +502,11 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
     msg += `<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
     
-    // Entry score
+    // Entry score with normalized score
     if (w.entryScore !== undefined) {
-      msg += ` ${scoreEmoji(w.entryScore)} ${w.entryScore >= 0 ? '+' : ''}${w.entryScore.toFixed(2)}`;
+      const scoreSign = w.entryScore >= 0 ? '+' : '';
+      const normScore = rep && !rep.isNew ? ` (${rep.normalizedScore})` : '';
+      msg += ` ${scoreEmoji(w.entryScore)} ${scoreSign}${w.entryScore.toFixed(2)}${normScore}`;
     }
     
     // Repeat indicator
@@ -1021,6 +1024,22 @@ async function monitorSignals(config) {
       const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
       const privateButtons = buildPrivateButtons(signal.chainId, signal.tokenAddress);
       const publicButtons = buildPublicButtons(signal.chainId, signal.tokenAddress);
+      
+      // ===== SLIPPAGE LOGGING =====
+      // Measure real slippage between OKX signal price and current DexScreener price
+      try {
+        const signalPrice = parseFloat(signal.priceAtSignal) || 0;
+        if (signalPrice > 0) {
+          const livePrice = await getTokenPrice(signal.chainId, signal.tokenAddress);
+          if (livePrice && livePrice.priceUsd > 0) {
+            const slippagePct = ((livePrice.priceUsd - signalPrice) / signalPrice) * 100;
+            console.log(`   📊 Slippage: ${slippagePct >= 0 ? '+' : ''}${slippagePct.toFixed(2)}% (OKX: $${signalPrice.toExponential(2)}, Live: $${livePrice.priceUsd.toExponential(2)})`);
+          }
+        }
+      } catch (slipErr) {
+        // Non-fatal, just log
+        console.log(`   ⚠️ Slippage check failed: ${slipErr.message}`);
+      }
       
       // Check if signal is a loss (negative score or negative gain)
       const maxPctGain = parseFloat(signal.maxPctGain) || 0;
