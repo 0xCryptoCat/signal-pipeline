@@ -201,6 +201,9 @@ async function processChain(chain, allPerformers) {
   const db = new TelegramDBv5(BOT_TOKEN, chain.id);
   await db.load();
   
+  // Check for daily/weekly/monthly rollovers
+  db.checkRollovers();
+  
   // Get all tokens from v5 database
   const tokens = db.getAllTokens();
   const tokenAddresses = Object.keys(tokens);
@@ -274,12 +277,34 @@ async function processChain(chain, allPerformers) {
       token.peakMult = currentPrice / entryPrice;
     }
     
+    // ============================================================
+    // JOURNEY TRACKING (for analytics, not displayed)
+    // ============================================================
+    const peakMult = token.peakMult || 1;
+    const lowMult = token.pLow ? (token.pLow / entryPrice) : 1;
+    
+    // hitPeakAfterDip: Token went below entry (-35% or more) then recovered to peak above entry
+    // This indicates resilience - the token recovered from a significant dip
+    if (!token.hitPeakAfterDip && lowMult <= 0.65 && peakMult >= 1.0) {
+      token.hitPeakAfterDip = true;
+      console.log(`   📈 Journey: ${token.sym} recovered from ${((1-lowMult)*100).toFixed(0)}% dip to ${((peakMult-1)*100).toFixed(0)}% peak`);
+    }
+    
+    // dippedAfterPeak: Token achieved 1.5x+ then fell below entry (pump and dump pattern)
+    if (!token.dippedAfterPeak && peakMult >= 1.5 && currentMultiplier < 1.0) {
+      token.dippedAfterPeak = true;
+      console.log(`   📉 Journey: ${token.sym} peaked at ${((peakMult-1)*100).toFixed(0)}% then dumped to ${((currentMultiplier-1)*100).toFixed(0)}%`);
+    }
+    
     // Archive Logic
     // 1. Hard Dump: 50% drop from ATH
     const peakPrice = token.pPeak || entryPrice;
     const dropFromPeak = (peakPrice - currentPrice) / peakPrice;
-    if (dropFromPeak >= 0.5) {
+    let justArchived = false;
+    
+    if (dropFromPeak >= 0.5 && !token.archived) {
       token.archived = true;
+      justArchived = true;
     }
     
     // 2. Time Limit: 
@@ -288,8 +313,14 @@ async function processChain(chain, allPerformers) {
     const isWinner = currentMultiplier >= 1.0;
     const maxAge = isWinner ? MAX_TRACKING_AGE_MS : MAX_SIGNAL_AGE_MS;
     
-    if (signalAge > maxAge) {
+    if (signalAge > maxAge && !token.archived) {
       token.archived = true;
+      justArchived = true;
+    }
+    
+    // Record final performance when archiving
+    if (justArchived) {
+      db.finalizeToken(token);
     }
     
     db.updateToken(addr, token);
