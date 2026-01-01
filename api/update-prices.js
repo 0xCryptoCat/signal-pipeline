@@ -332,8 +332,8 @@ async function processChain(chain, allPerformers) {
     
     // Check if token has ever "mooned" (pumped > 5% initially)
     // If it has, we treat it as a winner and ignore subsequent drops
-    const peakMult = (token.pPeak || entryPrice) / entryPrice;
-    const hasMooned = peakMult > 1.05; 
+    const peakMultForReport = (token.pPeak || entryPrice) / entryPrice;
+    const hasMooned = peakMultForReport > 1.05; 
     
     if (signalAge <= MAX_SIGNAL_AGE_MS) {
       if (newlyRugged) {
