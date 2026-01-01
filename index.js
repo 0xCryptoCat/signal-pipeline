@@ -214,6 +214,26 @@ async function fetchSignalDetail(chainId, tokenAddress, batchId, batchIndex) {
   return json.data;
 }
 
+async function fetchWalletProfile(chainId, walletAddress) {
+  const t = Date.now();
+  const url = `https://web3.okx.com/priapi/v1/dx/market/v2/pnl/wallet-profile/query/address/info?chainId=${chainId}&walletAddress=${walletAddress}&t=${t}`;
+  
+  try {
+    const json = await fetchJson(url);
+    if (json.code !== 0) return null;
+    
+    // Extract KOL link from response
+    // Structure: data.t[0].e.kolTwitterLink
+    if (json.data?.t?.[0]?.e?.kolTwitterLink) {
+      return json.data.t[0].e.kolTwitterLink;
+    }
+    return null;
+  } catch (e) {
+    console.log(`   ⚠️ Failed to fetch profile for ${walletAddress}: ${e.message}`);
+    return null;
+  }
+}
+
 async function fetchTradingHistory(chainId, walletAddress, limit = 30) {
   const allTokens = [];
   let offset = 0;
@@ -883,6 +903,20 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
   // Fetch wallet details
   const detail = await fetchSignalDetail(chainId, tokenAddress, activity.batchId, activity.batchIndex);
   const walletDetails = detail.addresses || [];
+  
+  // If Influencer signal (label '2'), fetch real profile URLs
+  if (activity.signalLabel === '2') {
+    console.log(`   🎤 Fetching KOL profiles for ${walletDetails.length} wallets...`);
+    for (const wallet of walletDetails) {
+      if (wallet.addressInfo?.kolAddress) {
+        const realUrl = await fetchWalletProfile(chainId, wallet.walletAddress);
+        if (realUrl) {
+          wallet.addressInfo.kolTwitterLink = realUrl;
+        }
+        await sleep(200); // Rate limit niceness
+      }
+    }
+  }
   
   // Score wallets if enabled
   if (config.scoreWallets) {
