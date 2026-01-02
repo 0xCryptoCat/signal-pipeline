@@ -1098,7 +1098,7 @@ async function monitorSignals(config) {
       
       // ===== DATA DISCREPANCY CHECK =====
       // Fetch live DexScreener data BEFORE formatting message
-      // If there's a significant discrepancy (>20%), use DexScreener data instead
+      // If there's a significant discrepancy (>10%), use DexScreener data instead
       let liveData = null;
       try {
         const signalPrice = parseFloat(signal.priceAtSignal) || 0;
@@ -1108,9 +1108,9 @@ async function monitorSignals(config) {
           const slippagePct = ((liveData.priceUsd - signalPrice) / signalPrice) * 100;
           console.log(`   📊 Slippage: ${slippagePct >= 0 ? '+' : ''}${slippagePct.toFixed(2)}% (OKX: $${signalPrice.toExponential(2)}, Live: $${liveData.priceUsd.toExponential(2)})`);
           
-          // If significant discrepancy (>20%), use DexScreener data
-          if (Math.abs(slippagePct) > 20) {
-            console.log(`   🔄 Using DexScreener data (discrepancy >20%)`);
+          // If significant discrepancy (>10%), use DexScreener data
+          if (Math.abs(slippagePct) > 10) {
+            console.log(`   🔄 Using DexScreener data (discrepancy >10%)`);
             signal.priceAtSignal = liveData.priceUsd;
             signal.mcapAtSignal = liveData.marketCap || signal.mcapAtSignal;
             signal.volumeInSignal = liveData.volume24h || signal.volumeInSignal;
