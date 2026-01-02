@@ -1096,41 +1096,49 @@ async function monitorSignals(config) {
         continue;
       }
       
-      // Format and send message (reply to previous signal for same token)
-      // Pass db for wallet reputation lookup
-      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
-      const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
-      const privateButtons = buildPrivateButtons(signal.chainId, signal.tokenAddress);
-      const publicButtons = buildPublicButtons(signal.chainId, signal.tokenAddress);
-      
-      // ===== SLIPPAGE & DATA CHECK =====
-      // Measure real slippage between OKX signal price and current DexScreener price
-      // Also cross-check MCap and Volume if possible
+      // ===== DATA DISCREPANCY CHECK =====
+      // Fetch live DexScreener data BEFORE formatting message
+      // If there's a significant discrepancy (>20%), use DexScreener data instead
+      let liveData = null;
       try {
         const signalPrice = parseFloat(signal.priceAtSignal) || 0;
-        if (signalPrice > 0) {
-          const liveData = await getTokenPrice(signal.chainId, signal.tokenAddress);
-          if (liveData && liveData.priceUsd > 0) {
-            const slippagePct = ((liveData.priceUsd - signalPrice) / signalPrice) * 100;
-            console.log(`   📊 Slippage: ${slippagePct >= 0 ? '+' : ''}${slippagePct.toFixed(2)}% (OKX: $${signalPrice.toExponential(2)}, Live: $${liveData.priceUsd.toExponential(2)})`);
-            
-            // Cross-check MCap
+        liveData = await getTokenPrice(signal.chainId, signal.tokenAddress);
+        
+        if (liveData && liveData.priceUsd > 0 && signalPrice > 0) {
+          const slippagePct = ((liveData.priceUsd - signalPrice) / signalPrice) * 100;
+          console.log(`   📊 Slippage: ${slippagePct >= 0 ? '+' : ''}${slippagePct.toFixed(2)}% (OKX: $${signalPrice.toExponential(2)}, Live: $${liveData.priceUsd.toExponential(2)})`);
+          
+          // If significant discrepancy (>20%), use DexScreener data
+          if (Math.abs(slippagePct) > 20) {
+            console.log(`   🔄 Using DexScreener data (discrepancy >20%)`);
+            signal.priceAtSignal = liveData.priceUsd;
+            signal.mcapAtSignal = liveData.marketCap || signal.mcapAtSignal;
+            signal.volumeInSignal = liveData.volume24h || signal.volumeInSignal;
+            signal.dataSource = 'DexScreener'; // Mark for debugging
+          } else {
+            // Cross-check MCap even without price discrepancy
             const okxMcap = parseFloat(signal.mcapAtSignal) || 0;
             const liveMcap = liveData.marketCap || 0;
             if (okxMcap > 0 && liveMcap > 0) {
               const mcapDiff = Math.abs((liveMcap - okxMcap) / okxMcap) * 100;
               if (mcapDiff > 20) {
-                console.warn(`   ⚠️ MCap Mismatch: OKX $${formatUsd(okxMcap)} vs Live $${formatUsd(liveMcap)} (Diff: ${mcapDiff.toFixed(0)}%)`);
-              } else {
-                console.log(`   ✅ MCap Verified: OKX $${formatUsd(okxMcap)} vs Live $${formatUsd(liveMcap)}`);
+                console.log(`   🔄 MCap Mismatch (${mcapDiff.toFixed(0)}%), using DexScreener MCap`);
+                signal.mcapAtSignal = liveMcap;
               }
             }
           }
         }
       } catch (slipErr) {
         // Non-fatal, just log
-        console.log(`   ⚠️ Slippage/Data check failed: ${slipErr.message}`);
+        console.log(`   ⚠️ DexScreener fetch failed: ${slipErr.message}`);
       }
+      
+      // Format and send message (reply to previous signal for same token)
+      // Pass db for wallet reputation lookup
+      const msg = formatSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
+      const redactedMsg = formatRedactedSignalMessage(signal, walletDetails, { tokenHistory, walletCategories, db, security });
+      const privateButtons = buildPrivateButtons(signal.chainId, signal.tokenAddress);
+      const publicButtons = buildPublicButtons(signal.chainId, signal.tokenAddress);
       
       // Check if signal is a loss (negative score or negative gain)
       const maxPctGain = parseFloat(signal.maxPctGain) || 0;
