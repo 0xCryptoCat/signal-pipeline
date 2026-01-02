@@ -435,7 +435,7 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
   // ===== HEADER =====
   const isNewToken = !tokenHistory || !tokenHistory.signalCount || tokenHistory.signalCount === 0;
   const signalEmoji = isNewToken ? '🆕' : '🚨';
-  let msg = `#${signal.chainName} ${signalEmoji} <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${contextTitle}\n`;
+  let msg = `#${signal.chainName} ${signalEmoji} <b>${SIGNAL_LABELS[signal.signalLabel] || ''} Signal</b> ${rating.emoji} ${signalAvgScore.toFixed(2)} | ${contextTitle}\n`;
   msg += `${SEPARATOR}\n`;
   
   // ===== WALLET SUMMARY LINE =====
