@@ -223,8 +223,9 @@ async function processChain(chain, allPerformers) {
   let performerCount = 0;
   
   for (const [addr, token] of Object.entries(tokens)) {
-    // Skip archived tokens
-    if (token.archived) continue;
+    // Note: We still update archived tokens for ATH tracking (leaderboards)
+    // But we won't report or archive them again
+    const isArchived = token.archived || false;
 
     const priceData = prices[addr.toLowerCase()];
     
@@ -296,24 +297,24 @@ async function processChain(chain, allPerformers) {
       console.log(`   📉 Journey: ${token.sym} peaked at ${((peakMult-1)*100).toFixed(0)}% then dumped to ${((currentMultiplier-1)*100).toFixed(0)}%`);
     }
     
-    // Archive Logic
+    // Archive Logic (only for non-archived tokens)
     // 1. Hard Dump: 50% drop from ATH
     const peakPrice = token.pPeak || entryPrice;
     const dropFromPeak = (peakPrice - currentPrice) / peakPrice;
     let justArchived = false;
     
-    if (dropFromPeak >= 0.5 && !token.archived) {
+    if (!isArchived && dropFromPeak >= 0.5) {
       token.archived = true;
       justArchived = true;
     }
     
-    // 2. Time Limit: 
+    // 2. Time Limit (only for non-archived tokens):
     // - Winners (> entry): Track for 7 days
     // - Losers (< entry): Track for 48 hours
     const isWinner = currentMultiplier >= 1.0;
     const maxAge = isWinner ? MAX_TRACKING_AGE_MS : MAX_SIGNAL_AGE_MS;
     
-    if (signalAge > maxAge && !token.archived) {
+    if (!isArchived && signalAge > maxAge) {
       token.archived = true;
       justArchived = true;
     }
@@ -326,9 +327,16 @@ async function processChain(chain, allPerformers) {
     db.updateToken(addr, token);
     updated++;
     
-    // Reporting Logic
+    // Reporting Logic (skip for already archived tokens, but report if just archived)
     let shouldReport = false;
     let reportType = null;
+    
+    // Skip reporting for tokens that were already archived before this update
+    // But continue tracking ATH above - that's the whole point of this fix!
+    if (isArchived && !justArchived) {
+      // Already archived, no reporting needed, but we DID update the ATH above
+      continue;
+    }
     
     // Check if token has ever "mooned" (pumped > 5% initially)
     // If it has, we treat it as a winner and ignore subsequent drops
