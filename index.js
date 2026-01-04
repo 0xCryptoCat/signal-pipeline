@@ -1307,8 +1307,13 @@ async function monitorSignals(config) {
           }
           
           // Send to Trading Simulator (if configured and score passes threshold)
-          if (simulatorUrl && signalAvgScore >= simulatorMinScore) {
+          // ONLY for new signals (no history)
+          const isNewToken = !tokenHistory || !tokenHistory.signalCount || tokenHistory.signalCount === 0;
+          
+          if (simulatorUrl && signalAvgScore >= simulatorMinScore && isNewToken) {
             await sendToSimulator(simulatorUrl, signal, signalAvgScore, chainName);
+          } else if (simulatorUrl && !isNewToken) {
+            console.log(`   ⏭️ Skipping Simulator: Subsequent signal (count: ${tokenHistory?.signalCount})`);
           }
         } else {
           console.log(`   ❌ Telegram error: ${result.description}`);
