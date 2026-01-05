@@ -769,7 +769,7 @@ function buildPublicButtons(chainId, tokenAddress) {
 /**
  * Send signal to trading simulator for paper trading
  */
-async function sendToSimulator(simulatorUrl, signal, avgScore, chainName) {
+async function sendToSimulator(simulatorUrl, signal, avgScore, chainName, isLowScore = false) {
   if (!simulatorUrl) return null;
   
   try {
@@ -779,6 +779,7 @@ async function sendToSimulator(simulatorUrl, signal, avgScore, chainName) {
       symbol: signal.tokenSymbol,
       entryPrice: parseFloat(signal.priceAtSignal) || 0,
       score: avgScore,
+      isLowScore
     };
     
     const response = await fetch(`${simulatorUrl}/api/new-signal`, {
@@ -791,6 +792,8 @@ async function sendToSimulator(simulatorUrl, signal, avgScore, chainName) {
     
     if (result.status === 'ok') {
       console.log(`   🎯 Simulator: Position opened for ${signal.tokenSymbol}`);
+    } else if (result.status === 'skipped') {
+      console.log(`   🎯 Simulator: Skipped ${signal.tokenSymbol} (${result.reason})`);
     } else if (result.message?.includes('already exists')) {
       console.log(`   🎯 Simulator: Position already exists for ${signal.tokenSymbol}`);
     } else {
@@ -1310,8 +1313,11 @@ async function monitorSignals(config) {
           // ONLY for new signals (no history)
           const isNewToken = !tokenHistory || !tokenHistory.signalCount || tokenHistory.signalCount === 0;
           
-          if (simulatorUrl && signalAvgScore >= simulatorMinScore && isNewToken) {
-            await sendToSimulator(simulatorUrl, signal, signalAvgScore, chainName);
+          if (simulatorUrl && isNewToken) {
+            // Send ALL new tokens to simulator
+            // If score < minScore, mark as low score (notification only)
+            const isLowScore = signalAvgScore < simulatorMinScore;
+            await sendToSimulator(simulatorUrl, signal, signalAvgScore, chainName, isLowScore);
           } else if (simulatorUrl && !isNewToken) {
             console.log(`   ⏭️ Skipping Simulator: Subsequent signal (count: ${tokenHistory?.signalCount})`);
           }
