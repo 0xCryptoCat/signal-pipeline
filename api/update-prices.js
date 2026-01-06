@@ -449,6 +449,7 @@ export default async function handler(req, res) {
         }
       }
       
+      /* DISABLED PUBLIC CHANNEL
       // Send to PUBLIC channel (redacted wallets)
       const publicMsg = formatAggregatedMessage(allPerformers, PUBLIC_CHANNEL, true);
       if (publicMsg) {
@@ -459,6 +460,7 @@ export default async function handler(req, res) {
           console.log(`❌ Failed to send to PUBLIC: ${result.description}`);
         }
       }
+      */
     }
     
     const duration = Date.now() - startTime;

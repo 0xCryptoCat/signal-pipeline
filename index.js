@@ -1269,6 +1269,7 @@ async function monitorSignals(config) {
             }
           }
           
+          /* DISABLED PUBLIC CHANNEL
           // Send to PUBLIC channel (redacted) - WITH reply chaining to public messages
           // Skip public channel for losses (negative score or negative gain)
           if (isLoss) {
@@ -1308,6 +1309,7 @@ async function monitorSignals(config) {
           } catch (pubErr) {
             console.log(`   ⚠️ Public channel failed (non-fatal): ${pubErr.message}`);
           }
+          */
           
           // Send to Trading Simulator (if configured and score passes threshold)
           // ONLY for new signals (no history)
