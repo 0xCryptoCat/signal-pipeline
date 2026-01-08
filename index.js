@@ -31,6 +31,7 @@ import {
 import { generateChart } from './lib/chart-generator.js';
 import { fetchSecurity } from './lib/security-fetcher.js';
 import { getTokenPrice } from './lib/price-fetcher.js';
+import { resolveENS, batchResolveENS } from './lib/ens-resolver.js';
 
 // Channel IDs
 const PRIVATE_CHANNEL = '-1003474351030';
@@ -518,9 +519,9 @@ function formatSignalMessage(signal, walletDetails, options = {}) {
     // Get our tracked reputation data if available
     const rep = db ? getWalletReputation(db, w.walletAddress) : null;
     
-    // Wallet link
-    const shortAddr = `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
-    msg += `<a href="${explorer.wallet}${w.walletAddress}">${shortAddr}</a>`;
+    // Wallet link - use ENS name if available (ETH chain only)
+    const displayName = w.ensName || `${w.walletAddress.slice(0, 6)}...${w.walletAddress.slice(-4)}`;
+    msg += `<a href="${explorer.wallet}${w.walletAddress}">${escapeHtml(displayName)}</a>`;
     
     // Entry score with normalized score
     if (w.entryScore !== undefined) {
@@ -926,7 +927,7 @@ async function processSignal(activity, tokenInfo, overviewList, config) {
     for (const wallet of walletDetails) {
       try {
         const scoring = await scoreWalletEntries(wallet.walletAddress, chainId, 10);
-        wallet.entryScore = scoring.avgScore;
+        wallet.entryScore = scoring.count > 0 ? scoring.avgScore : undefined;
         wallet.entryCount = scoring.count;
       } catch (err) {
         console.error(`Failed to score ${wallet.walletAddress}:`, err.message);
@@ -1134,6 +1135,26 @@ async function monitorSignals(config) {
       } catch (slipErr) {
         // Non-fatal, just log
         console.log(`   ⚠️ DexScreener fetch failed: ${slipErr.message}`);
+      }
+      
+      // ===== ENS RESOLUTION (ETH chain only) =====
+      if (signal.chainId === 1) {
+        try {
+          const ethAddresses = walletDetails.map(w => w.walletAddress);
+          const ensMap = await batchResolveENS(ethAddresses);
+          for (const w of walletDetails) {
+            const ens = ensMap.get(w.walletAddress);
+            if (ens) {
+              w.ensName = ens;
+            }
+          }
+          const resolved = walletDetails.filter(w => w.ensName).length;
+          if (resolved > 0) {
+            console.log(`   🔖 ENS: ${resolved}/${walletDetails.length} wallets resolved`);
+          }
+        } catch (ensErr) {
+          console.log(`   ⚠️ ENS resolution failed: ${ensErr.message}`);
+        }
       }
       
       // Format and send message (reply to previous signal for same token)
