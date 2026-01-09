@@ -258,6 +258,17 @@ function formatMultSum(sum) {
 }
 
 /**
+ * Format market cap with abbreviation ($40.9K, $1.2M, etc.)
+ */
+function formatMcap(mcap) {
+  if (!mcap || mcap <= 0) return null;
+  if (mcap >= 1000000000) return `$${(mcap / 1000000000).toFixed(1)}B`;
+  if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(1)}M`;
+  if (mcap >= 1000) return `$${(mcap / 1000).toFixed(1)}K`;
+  return `$${Math.round(mcap)}`;
+}
+
+/**
  * Convert multiplier to percent gain/loss
  */
 function multToPercent(mult) {
@@ -306,13 +317,16 @@ function buildSignalLink(msgId) {
 
 /**
  * Format bracket distribution
+ * Format: (<1x): 25 (42%)
  */
 function formatBrackets(brackets) {
   let msg = '';
   for (const b of BRACKETS) {
     const data = brackets[b.key];
     if (data.count > 0) {
-      msg += `├ (${b.label}): <b>${data.pct}%</b> (${data.count})\n`;
+      // Pad bracket label to 9 chars for alignment
+      const label = `(${b.label})`.padEnd(9);
+      msg += `├ ${label} <b>${data.count}</b> (${data.pct}%)\n`;
     }
   }
   // Replace last ├ with └
@@ -344,19 +358,20 @@ function formatSingleChainMessage(chain, data) {
   let msg = `<b>${emoji} ${chain.toUpperCase()} Gains — ${periodLabel}</b>\n`;
   msg += `<code>────────────────────</code>\n\n`;
   
-  // Stats
+  // Stats (flipped format)
   const total = allTokens.length;
+  const hitPct = total > 0 ? Math.round((hitCount / total) * 100) : 0;
   msg += `📊 <b>Stats</b>\n`;
   msg += `├ Signals: <b>${total}</b> (${formatMultSum(multSum)})\n`;
-  msg += `├ Hit Rate (≥1.3x): <b>${total > 0 ? Math.round((hitCount / total) * 100) : 0}%</b> (${hitCount})\n`;
-  msg += `├ Median: <b>${formatMult(median)}</b> ${multToPercent(median)}\n`;
-  msg += `└ Avg: <b>${formatMult(avgMult)}</b> ${multToPercent(avgMult)}\n\n`;
+  msg += `├ Hit Rate: <b>${hitCount}</b> (${hitPct}%)\n`;
+  msg += `├ Median: <b>${multToPercent(median)}</b> [${formatMult(median)}]\n`;
+  msg += `└ Avg: <b>${multToPercent(avgMult)}</b> [${formatMult(avgMult)}]\n\n`;
   
   // Bracket distribution
   msg += `📈 <b>Distribution</b>\n`;
   msg += formatBrackets(bracketDist) + '\n\n';
   
-  // Top performers in blockquote (no address links)
+  // Top performers in blockquote (with mc0)
   if (topTokens.length === 0) {
     msg += `<i>No signals in this period</i>\n`;
   } else {
@@ -368,13 +383,19 @@ function formatSingleChainMessage(chain, data) {
       const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
       const multStr = formatMult(token.peakMult);
       const age = formatAge(token.firstSeen);
+      const mcStr = formatMcap(token.mc0);
       
       // Symbol links to signal message only
       const symLink = token.msgId 
         ? `<a href="${buildSignalLink(token.msgId)}">${escapeHtml(token.sym)}</a>`
         : `<b>${escapeHtml(token.sym)}</b>`;
       
-      msg += `${medal} ${symLink} <b>${multStr}</b> (${age})\n`;
+      // Format: 🥇 🟣Buttcoin [25.8x] 4h @ $40.9K
+      if (mcStr) {
+        msg += `${medal} ${symLink} [${multStr}] ${age} @ ${mcStr}\n`;
+      } else {
+        msg += `${medal} ${symLink} [${multStr}] ${age}\n`;
+      }
     });
     
     msg += `</blockquote>`;
@@ -393,16 +414,16 @@ function formatAllChainsMessage(chainResults, period) {
   let msg = `<b>🌐 ALL CHAINS — ${periodLabel}</b>\n`;
   msg += `<code>════════════════════</code>\n\n`;
   
-  // Combined stats
+  // Combined stats (flipped format)
   const { stats } = combined;
   msg += `📊 <b>Combined Stats</b>\n`;
   msg += `├ Signals: <b>${stats.total}</b> (${formatMultSum(stats.multSum)})\n`;
-  msg += `├ Hit Rate (≥1.3x): <b>${stats.hitRate}%</b> (${stats.hitCount})\n`;
-  msg += `├ Median: <b>${formatMult(stats.median)}</b> ${multToPercent(stats.median)}\n`;
-  msg += `└ Avg: <b>${formatMult(stats.avgMult)}</b> ${multToPercent(stats.avgMult)}\n\n`;
+  msg += `├ Hit Rate: <b>${stats.hitCount}</b> (${stats.hitRate}%)\n`;
+  msg += `├ Median: <b>${multToPercent(stats.median)}</b> [${formatMult(stats.median)}]\n`;
+  msg += `└ Avg: <b>${multToPercent(stats.avgMult)}</b> [${formatMult(stats.avgMult)}]\n\n`;
   
-  // Per-chain summary
-  msg += `📈 <b>By Chain</b>\n`;
+  // Per-chain summary with aligned columns
+  msg += `📈 <b>By Chain</b> <code>[Sig │ Hit │ Avg]</code>\n`;
   for (const [chain, data] of Object.entries(chainResults)) {
     const emoji = CHAIN_EMOJI[chain];
     const allTokens = data.allTokens || data.tokens;
@@ -411,7 +432,11 @@ function formatAllChainsMessage(chainResults, period) {
     const avgMult = allTokens.length > 0 
       ? allTokens.reduce((s, t) => s + (t.peakMult || 1), 0) / allTokens.length 
       : 1;
-    msg += `${emoji} ${chain.toUpperCase()}: ${allTokens.length} sigs • ${hitPct}% hit • ${formatMult(avgMult)} avg\n`;
+    // Aligned columns: [Sig │ Hit │ Avg]
+    const sigStr = String(allTokens.length).padStart(3);
+    const hitStr = `${hitPct}%`.padStart(3);
+    const avgStr = formatMult(avgMult);
+    msg += `${emoji} <code>${sigStr} │ ${hitStr} │ ${avgStr}</code>\n`;
   }
   msg += `\n`;
   
@@ -419,7 +444,7 @@ function formatAllChainsMessage(chainResults, period) {
   msg += `📊 <b>Distribution</b>\n`;
   msg += formatBrackets(stats.brackets) + '\n\n';
   
-  // Top performers (no address links)
+  // Top performers (with mc0)
   if (combined.tokens.length === 0) {
     msg += `<i>No signals in this period</i>\n`;
   } else {
@@ -432,13 +457,19 @@ function formatAllChainsMessage(chainResults, period) {
       const chainEmoji = CHAIN_EMOJI[token.chain] || '';
       const multStr = formatMult(token.peakMult);
       const age = formatAge(token.firstSeen);
+      const mcStr = formatMcap(token.mc0);
       
       // Symbol links to signal message only
       const symLink = token.msgId 
         ? `<a href="${buildSignalLink(token.msgId)}">${escapeHtml(token.sym)}</a>`
         : `<b>${escapeHtml(token.sym)}</b>`;
       
-      msg += `${medal} ${chainEmoji}${symLink} <b>${multStr}</b> (${age})\n`;
+      // Format: 🥇 🟣Buttcoin [25.8x] 4h @ $40.9K
+      if (mcStr) {
+        msg += `${medal} ${chainEmoji}${symLink} [${multStr}] ${age} @ ${mcStr}\n`;
+      } else {
+        msg += `${medal} ${chainEmoji}${symLink} [${multStr}] ${age}\n`;
+      }
     });
     
     msg += `</blockquote>`;
