@@ -172,9 +172,10 @@ function calcMultSum(tokens) {
     if (mult >= 2) {
       sum += mult;
     } else if (mult > 1) {
-      sum += mult - 1; // Only the gain portion
+      sum += mult - 1; // Only the gain portion (1.3x adds 0.3)
     }
-    // < 1x = loss, don't add
+    // Note: < 1x = loss, contributes 0 to sum (we don't subtract losses)
+    // The loss is already reflected in hit rate and bracket distribution
   }
   return sum;
 }
