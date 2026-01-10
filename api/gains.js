@@ -16,6 +16,7 @@
  */
 
 import { TelegramDBv5, CHAIN_IDS, CHANNELS } from '../lib/telegram-db-v5.js';
+import pnlHandler from './pnl.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAINS = ['sol', 'eth', 'bsc', 'base'];
@@ -591,8 +592,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
     
-    // /gains command
+    // Route /pnl commands to pnl handler
     const message = update.message;
+    if (message?.text?.startsWith('/pnl')) {
+      return pnlHandler(req, res);
+    }
+    
+    // /gains command
     if (!message?.text?.startsWith('/gains')) {
       return res.status(200).json({ ok: true });
     }

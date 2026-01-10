@@ -18,8 +18,8 @@ const CHAINS = ['sol', 'eth', 'bsc', 'base'];
 const PRIVATE_CHANNEL = CHANNELS.private;
 
 // Channel config
-const CHANNEL_NAME = 'Alphalert Signals';
-const BOT_USERNAME = '@AlphalertBot';
+const CHANNEL_NAME = 'AI Alpha Signals';
+const BOT_USERNAME = '@aialphasignals';
 
 // ============================================================
 // TELEGRAM API HELPERS
