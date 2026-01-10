@@ -73,7 +73,7 @@ async function findToken(address) {
   for (const chain of CHAINS) {
     try {
       const chainId = CHAIN_IDS[chain];
-      const db = new TelegramDBv5(chainId);
+      const db = new TelegramDBv5(BOT_TOKEN, chainId);
       await db.init();
       
       // Search all tokens
