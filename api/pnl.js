@@ -4,7 +4,8 @@
  * Generates a shareable image card showing token performance.
  * 
  * Usage:
- *   /pnl <token_address>  - Generate PnL card for token
+ *   /pnl <chain> <token_address>  - Generate PnL card for token
+ *   Chains: sol, eth, bsc, base
  * 
  * POST /api/pnl (webhook mode - for Telegram bot)
  * GET /api/pnl?addr=<address>&chain=sol (API mode - for testing)
@@ -65,30 +66,44 @@ async function sendPhoto(chatId, photoBuffer, caption = '', replyToMessageId = n
 // ============================================================
 
 /**
- * Find token across all chain databases
+ * Find token in a specific chain database
+ */
+async function findTokenInChain(chain, address) {
+  const normalizedAddr = address.toLowerCase().trim();
+  
+  try {
+    const chainId = CHAIN_IDS[chain];
+    if (!chainId) return null;
+    
+    const db = new TelegramDBv5(BOT_TOKEN, chainId);
+    await db.init();
+    
+    // Search all tokens
+    const tokens = db.db?.tokens || {};
+    
+    // Check both exact match and case-insensitive
+    for (const [addr, token] of Object.entries(tokens)) {
+      if (addr.toLowerCase() === normalizedAddr) {
+        console.log(`   Found token ${token.sym} on ${chain}`);
+        return { chain, address: addr, token };
+      }
+    }
+  } catch (err) {
+    console.log(`   Error searching ${chain}:`, err.message);
+  }
+  
+  return null;
+}
+
+/**
+ * Find token across all chain databases (fallback)
  */
 async function findToken(address) {
   const normalizedAddr = address.toLowerCase().trim();
   
   for (const chain of CHAINS) {
-    try {
-      const chainId = CHAIN_IDS[chain];
-      const db = new TelegramDBv5(BOT_TOKEN, chainId);
-      await db.init();
-      
-      // Search all tokens
-      const tokens = db.db?.tokens || {};
-      
-      // Check both exact match and case-insensitive
-      for (const [addr, token] of Object.entries(tokens)) {
-        if (addr.toLowerCase() === normalizedAddr) {
-          console.log(`   Found token ${token.sym} on ${chain}`);
-          return { chain, address: addr, token };
-        }
-      }
-    } catch (err) {
-      console.log(`   Error searching ${chain}:`, err.message);
-    }
+    const result = await findTokenInChain(chain, normalizedAddr);
+    if (result) return result;
   }
   
   return null;
@@ -241,31 +256,46 @@ export default async function handler(req, res) {
   const messageId = update.message.message_id;
   const text = update.message.text.trim();
   
-  // Parse command: /pnl <address>
+  // Parse command: /pnl <chain> <address>
   const parts = text.split(/\s+/);
-  const address = parts[1];
+  const chainArg = parts[1]?.toLowerCase();
+  const address = parts[2];
+  
+  // Validate chain tag
+  const validChains = ['sol', 'eth', 'bsc', 'base'];
+  if (!chainArg || !validChains.includes(chainArg)) {
+    await sendMessage(chatId, 
+      '❌ <b>Usage:</b> <code>/pnl &lt;chain&gt; &lt;token_address&gt;</code>\n\n' +
+      '<b>Chains:</b> sol, eth, bsc, base\n\n' +
+      'Examples:\n' +
+      '<code>/pnl sol So11111111111111111111111111111111111111112</code>\n' +
+      '<code>/pnl eth 0x1234...abcd</code>',
+      messageId
+    );
+    return res.status(200).json({ ok: true });
+  }
   
   if (!address) {
     await sendMessage(chatId, 
-      '❌ <b>Usage:</b> <code>/pnl &lt;token_address&gt;</code>\n\n' +
-      'Example:\n<code>/pnl So11111111111111111111111111111111111111112</code>',
+      '❌ <b>Missing token address</b>\n\n' +
+      '<b>Usage:</b> <code>/pnl ' + chainArg + ' &lt;token_address&gt;</code>',
       messageId
     );
     return res.status(200).json({ ok: true });
   }
   
   // Send "searching" message
-  await sendMessage(chatId, '🔍 Looking up token...', messageId);
+  await sendMessage(chatId, `🔍 Looking up token on ${chainArg.toUpperCase()}...`, messageId);
   
   try {
-    // Find token across all chains
-    const result = await findToken(address);
+    // Find token in specified chain
+    const result = await findTokenInChain(chainArg, address);
     
     if (!result) {
       await sendMessage(chatId,
-        `❌ <b>Token not found</b>\n\n` +
+        `❌ <b>Token not found on ${chainArg.toUpperCase()}</b>\n\n` +
         `Address: <code>${address.slice(0, 16)}...${address.slice(-8)}</code>\n\n` +
-        `This token may not have any signals yet.`,
+        `This token may not have any signals yet on this chain.`,
         messageId
       );
       return res.status(200).json({ ok: true, found: false });
