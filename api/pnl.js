@@ -76,7 +76,7 @@ async function findTokenInChain(chain, address) {
     if (!chainId) return null;
     
     const db = new TelegramDBv5(BOT_TOKEN, chainId);
-    await db.init();
+    await db.load();
     
     // Search all tokens
     const tokens = db.db?.tokens || {};
