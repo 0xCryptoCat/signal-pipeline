@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PnL Card Template</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    /* Main card container - 16:9 aspect ratio */
+    .pnl-card {
+      width: 1200px;
+      height: 675px;
+      background: linear-gradient(145deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
+      border-radius: 24px;
+      padding: 48px;
+      color: white;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Subtle gradient overlay - dynamic based on performance */
+    .pnl-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(ellipse at 80% 20%, rgba(153, 69, 255, 0.15) 0%, transparent 50%),
+                  radial-gradient(ellipse at 20% 80%, rgba(34, 197, 94, 0.1) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    /* Grid pattern overlay */
+    .pnl-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    /* Header section */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+      z-index: 1;
+    }
+
+    .channel-name {
+      font-size: 36px;  /* Increased from 28px */
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+    }
+
+    .token-info {
+      text-align: right;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .token-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .token-symbol {
+      font-size: 42px;  /* Increased from 32px */
+      font-weight: 800;
+      background: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .chain-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      padding: 8px;
+    }
+
+    .chain-badge svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .entry-mc {
+      font-size: 24px;  /* Increased from 18px */
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .entry-mc span {
+      color: #22C55E;
+      font-weight: 600;
+    }
+
+    /* Content section - takes up remaining space */
+    .content {
+      flex: 1;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Logo positioned at bottom-left corner */
+    .logo-container {
+      position: absolute;
+      bottom: -20%;  /* Align with card padding edge */
+      left: -5%;    /* Align with card padding edge */
+      z-index: 2;
+    }
+
+    .logo-container img {
+      width: 500px;
+      height: 500px;
+      object-fit: contain;
+      /* No border, no shadow as requested */
+    }
+
+    /* Multiplier section - 2x size */
+    .multiplier-section {
+      text-align: right;
+    }
+
+    .multiplier-label {
+      font-size: 24px;  /* Increased from 16px */
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 12px;
+    }
+
+    .multiplier-value {
+      font-size: 200px;  /* 2x size (120 * ~1.7) */
+      font-weight: 900;
+      line-height: 0.9;
+      /* Default green - will be overridden by tier classes */
+      background: linear-gradient(135deg, #22C55E 0%, #14F195 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .percent-change {
+      font-size: 36px;  /* Increased from 28px */
+      font-weight: 600;
+      color: #22C55E;
+      margin-top: 12px;
+    }
+
+    /* ============================================================
+       MULTIPLIER COLOR TIERS
+       0-1x: Light red
+       1-1.3x: Warmer red/orange
+       1.3-5x: Yellow/Gold
+       5-50x: Greens (intensifying)
+       50-100x: Blue
+       100x+: Purple neon with gold glow
+       ============================================================ */
+
+    /* Tier 1: 0x - 1x (Loss - Light Red) */
+    .mult-tier-loss .multiplier-value {
+      background: linear-gradient(135deg, #EF4444 0%, #F87171 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 30px rgba(239, 68, 68, 0.3));
+    }
+    .mult-tier-loss .percent-change { color: #EF4444; }
+
+    /* Tier 2: 1x - 1.3x (Weak - Orange/Red) */
+    .mult-tier-weak .multiplier-value {
+      background: linear-gradient(135deg, #F97316 0%, #FB923C 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 30px rgba(249, 115, 22, 0.3));
+    }
+    .mult-tier-weak .percent-change { color: #F97316; }
+
+    /* Tier 3: 1.3x - 5x (Good - Yellow/Gold) */
+    .mult-tier-good .multiplier-value {
+      background: linear-gradient(135deg, #EAB308 0%, #FACC15 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 40px rgba(234, 179, 8, 0.4));
+    }
+    .mult-tier-good .percent-change { color: #EAB308; }
+
+    /* Tier 4: 5x - 15x (Great - Light Green) */
+    .mult-tier-great .multiplier-value {
+      background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 50px rgba(34, 197, 94, 0.4));
+    }
+    .mult-tier-great .percent-change { color: #22C55E; }
+
+    /* Tier 5: 15x - 50x (Excellent - Intense Green) */
+    .mult-tier-excellent .multiplier-value {
+      background: linear-gradient(135deg, #10B981 0%, #14F195 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 60px rgba(20, 241, 149, 0.5));
+    }
+    .mult-tier-excellent .percent-change { color: #10B981; }
+
+    /* Tier 6: 50x - 100x (Epic - Blue) */
+    .mult-tier-epic .multiplier-value {
+      background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 70px rgba(59, 130, 246, 0.6));
+    }
+    .mult-tier-epic .percent-change { color: #3B82F6; }
+
+    /* Tier 7: 100x+ (Legendary - Purple Neon with Gold Glow) */
+    .mult-tier-legendary .multiplier-value {
+      background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 50%, #D946EF 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 80px rgba(217, 70, 239, 0.7)) 
+              drop-shadow(0 0 120px rgba(251, 191, 36, 0.5));
+      animation: legendary-glow 2s ease-in-out infinite alternate;
+    }
+    .mult-tier-legendary .percent-change { 
+      color: #A855F7; 
+      text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+    }
+
+    @keyframes legendary-glow {
+      0% {
+        filter: drop-shadow(0 0 80px rgba(217, 70, 239, 0.7)) 
+                drop-shadow(0 0 120px rgba(251, 191, 36, 0.4));
+      }
+      100% {
+        filter: drop-shadow(0 0 100px rgba(217, 70, 239, 0.9)) 
+                drop-shadow(0 0 160px rgba(251, 191, 36, 0.7));
+      }
+    }
+
+    /* Footer section */
+    .footer {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-end;
+      position: relative;
+      z-index: 1;
+      margin-top: auto;
+    }
+
+    .username {
+      font-size: 24px;  /* Increased from 18px */
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Chain-specific token colors */
+    .pnl-card.solana .token-symbol { 
+      background: linear-gradient(135deg, #9945FF 0%, #14F195 100%); 
+      -webkit-background-clip: text; 
+      background-clip: text; 
+    }
+    .pnl-card.ethereum .token-symbol { 
+      background: linear-gradient(135deg, #627EEA 0%, #A8B8EA 100%); 
+      -webkit-background-clip: text; 
+      background-clip: text; 
+    }
+    .pnl-card.bsc .token-symbol { 
+      background: linear-gradient(135deg, #F3BA2F 0%, #FFE066 100%); 
+      -webkit-background-clip: text; 
+      background-clip: text; 
+    }
+    .pnl-card.base .token-symbol { 
+      background: linear-gradient(135deg, #0052FF 0%, #66A3FF 100%); 
+      -webkit-background-clip: text; 
+      background-clip: text; 
+    }
+  </style>
+</head>
+<body>
+  <!-- Example: Excellent gain on Solana (25.8x) -->
+  <div class="pnl-card solana mult-tier-excellent">
+    <div class="header">
+      <div class="channel-name">AI Alpha Signals</div>
+      <div class="token-info">
+        <div class="token-row">
+          <span class="token-symbol">$BUTTCOIN</span>
+          <div class="chain-badge">
+            <!-- Solana SVG -->
+            <svg viewBox="0 0 397.7 311.7" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <linearGradient id="solGrad" x1="360.879" y1="351.455" x2="141.213" y2="-69.294" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#00FFA3"/>
+                <stop offset="1" stop-color="#DC1FFF"/>
+              </linearGradient>
+              <path fill="url(#solGrad)" d="M64.6,237.9c2.4-2.4,5.7-3.8,9.2-3.8h317.4c5.8,0,8.7,7,4.6,11.1l-62.7,62.7c-2.4,2.4-5.7,3.8-9.2,3.8H6.5c-5.8,0-8.7-7-4.6-11.1L64.6,237.9z"/>
+              <path fill="url(#solGrad)" d="M64.6,3.8C67.1,1.4,70.4,0,73.8,0h317.4c5.8,0,8.7,7,4.6,11.1l-62.7,62.7c-2.4,2.4-5.7,3.8-9.2,3.8H6.5c-5.8,0-8.7-7-4.6-11.1L64.6,3.8z"/>
+              <path fill="url(#solGrad)" d="M333.1,120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8,0-8.7,7-4.6,11.1l62.7,62.7c2.4,2.4,5.7,3.8,9.2,3.8h317.4c5.8,0,8.7-7,4.6-11.1L333.1,120.1z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="entry-mc">First signal @ <span>$40.9K</span> MC</div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <div class="logo-container">
+        <!-- Logo image positioned at bottom-left, aligned with edge -->
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="Logo" />
+      </div>
+      
+      <div class="multiplier-section">
+        <div class="multiplier-label">Peak Multiplier</div>
+        <div class="multiplier-value">25.8x</div>
+        <div class="percent-change">+2,480%</div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div class="username">@aialphasignals</div>
+    </div>
+  </div>
+</body>
+</html>

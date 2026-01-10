@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: transparent;
+      width: 1200px;
+      height: 675px;
+    }
+
+    .pnl-card {
+      width: 1200px;
+      height: 675px;
+      background: linear-gradient(145deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
+      border-radius: 24px;
+      padding: 48px;
+      color: white;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .pnl-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(ellipse at 80% 20%, rgba(34, 197, 94, 0.15) 0%, transparent 50%),
+                  radial-gradient(ellipse at 20% 80%, rgba(153, 69, 255, 0.1) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .pnl-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+      z-index: 1;
+    }
+
+    .channel-name {
+      font-size: 28px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+    }
+
+    .token-info { text-align: right; }
+
+    .token-symbol {
+      font-size: 32px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .chain-badge {
+      display: inline-block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #9945FF;
+      background: #9945FF26;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .entry-mc {
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-top: 8px;
+    }
+
+    .entry-mc span { color: #22C55E; font-weight: 600; }
+
+    .content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-container {
+      width: 180px;
+      height: 180px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #2a2a4e 100%);
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo-container img {
+      width: 120px;
+      height: 120px;
+      object-fit: contain;
+    }
+
+    .logo-placeholder {
+      font-size: 48px;
+      font-weight: 800;
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .multiplier-section { text-align: right; }
+
+    .multiplier-label {
+      font-size: 16px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .multiplier-value {
+      font-size: 120px;
+      font-weight: 900;
+      line-height: 1;
+      background: linear-gradient(135deg, #22C55E 0%, #14F195 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .percent-change {
+      font-size: 28px;
+      font-weight: 600;
+      color: #22C55E;
+      margin-top: 8px;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      position: relative;
+      z-index: 1;
+    }
+
+    .stats { display: flex; gap: 32px; }
+
+    .stat-item { text-align: left; }
+
+    .stat-label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .username {
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="pnl-card">
+    <div class="header">
+      <div class="channel-name">AI Alpha Signals</div>
+      <div class="token-info">
+        <span class="token-symbol">$BUTTCOIN</span>
+        <span class="chain-badge">SOL</span>
+        <div class="entry-mc">First signal @ <span>$40.9K</span> MC</div>
+      </div>
+    </div>
+    
+    <div class="content">
+      <div class="logo-container">
+        <div class="logo-placeholder">🚀</div>
+      </div>
+      
+      <div class="multiplier-section">
+        <div class="multiplier-label">Peak Multiplier</div>
+        <div class="multiplier-value ">25.8x</div>
+        <div class="percent-change ">+2.5K%</div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-label">Entry Price</div>
+          <div class="stat-value">$4.10e-5</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">ATH Price</div>
+          <div class="stat-value">$0.001058</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Time to ATH</div>
+          <div class="stat-value">4h 23m</div>
+        </div>
+      </div>
+      <div class="username">@aialphasignals</div>
+    </div>
+  </div>
+</body>
+</html>

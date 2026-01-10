@@ -250,6 +250,14 @@ async function processChain(chain, allPerformers) {
     const entryPrice = token.p0 || 0;
     if (entryPrice <= 0) continue;
     
+    // SANITY CHECK: Validate price is reasonable
+    // Reject prices that would create >10000x multipliers (likely API corruption)
+    const potentialMult = currentPrice / entryPrice;
+    if (potentialMult > 10000 || potentialMult < 0.0000001) {
+      console.log(`   ⚠️ SKIPPED ${token.sym}: Suspicious mult ${potentialMult.toExponential(2)} (price: ${currentPrice}, entry: ${entryPrice})`);
+      continue;
+    }
+    
     // Track ATH (all-time high) and ATL (all-time low) since signal
     const previousATH = token.pPeak || entryPrice;
     const previousATL = token.pLow || entryPrice;
