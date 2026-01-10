@@ -13,6 +13,7 @@
 
 import { TelegramDBv5, CHAIN_IDS, CHANNELS } from '../lib/telegram-db-v5.js';
 import { generatePnlCardHtml, formatMcap, formatPrice, formatMult, multToPercent, getChainInfo, formatTimeDiff } from '../card-generator/pnl-generator.js';
+import { generatePnlCard } from '../card-generator/canvas-card.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAINS = ['sol', 'eth', 'bsc', 'base'];
@@ -306,10 +307,24 @@ export default async function handler(req, res) {
     
     console.log(`📊 PnL lookup: ${data.symbol} (${data.chain}) - ${data.multiplier.toFixed(2)}x`);
     
-    // For now, send text response (image generation requires puppeteer)
-    // TODO: Generate and send image card when puppeteer/edge is set up
-    const textResponse = generateTextResponse(data);
-    await sendMessage(chatId, textResponse, messageId);
+    // Generate and send image card
+    try {
+      const imageBuffer = await generatePnlCard(data);
+      
+      // Build caption with link to signal
+      let caption = `<b>$${data.symbol}</b> on ${chainArg.toUpperCase()}`;
+      if (data.msgId) {
+        const channelId = PRIVATE_CHANNEL.replace('-100', '');
+        caption += `\n\n🔗 <a href="https://t.me/c/${channelId}/${data.msgId}">View Signal</a>`;
+      }
+      
+      await sendPhoto(chatId, imageBuffer, caption, messageId);
+    } catch (imgErr) {
+      console.error('Image generation error:', imgErr);
+      // Fallback to text response
+      const textResponse = generateTextResponse(data);
+      await sendMessage(chatId, textResponse, messageId);
+    }
     
     return res.status(200).json({ 
       ok: true, 
