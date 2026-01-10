@@ -3,12 +3,8 @@
   "functions": {
     "api/**/*.js": {
       "maxDuration": 60,
-      "includeFiles": "fonts/**"
-    },
-    "api/pnl.js": {
-      "maxDuration": 60,
       "memory": 1024,
-      "includeFiles": "fonts/**"
+      "includeFiles": "fonts/**,card-generator/**"
     }
   }
 }
