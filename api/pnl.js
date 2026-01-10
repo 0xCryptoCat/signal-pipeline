@@ -13,7 +13,7 @@
 
 import { TelegramDBv5, CHAIN_IDS, CHANNELS } from '../lib/telegram-db-v5.js';
 import { generatePnlCardHtml, formatMcap, formatPrice, formatMult, multToPercent, getChainInfo, formatTimeDiff } from '../card-generator/pnl-generator.js';
-import { generatePnlCard } from '../card-generator/og-card.js';
+import { generatePnlCard } from '../card-generator/puppeteer-card.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAINS = ['sol', 'eth', 'bsc', 'base'];

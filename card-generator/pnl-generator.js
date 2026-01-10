@@ -6,6 +6,29 @@
  * For Vercel Edge, use @vercel/og in the API route directly
  */
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load logo.png as base64 data URL (cached)
+let LOGO_DATA_URL = null;
+function getLogoDataUrl() {
+  if (LOGO_DATA_URL) return LOGO_DATA_URL;
+  try {
+    const logoPath = path.join(__dirname, 'logo.png');
+    const logoBuffer = fs.readFileSync(logoPath);
+    LOGO_DATA_URL = `data:image/png;base64,${logoBuffer.toString('base64')}`;
+    return LOGO_DATA_URL;
+  } catch (err) {
+    console.error('Failed to load logo.png:', err.message);
+    return null;
+  }
+}
+
 // Chain SVG icons (inline for portability)
 const CHAIN_SVGS = {
   sol: `<svg viewBox="0 0 397.7 311.7" xmlns="http://www.w3.org/2000/svg">
@@ -441,11 +464,9 @@ export function generatePnlCardHtml(data) {
     </div>
     
     <div class="content">
-      ${logoUrl ? `
       <div class="logo-container">
-        <img src="${logoUrl}" alt="Logo" />
+        <img src="${getLogoDataUrl()}" alt="Logo" />
       </div>
-      ` : ''}
       
       <div class="multiplier-section">
         <div class="multiplier-label">Peak Multiplier</div>

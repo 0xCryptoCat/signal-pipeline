@@ -5,6 +5,11 @@ node_modules/
 .env.local
 .history/
 
+# Test output files
+test-*.png
+card-generator/test-*.png
+card-generator/test-*.html
+
 # Archived test/audit scripts (moved to _archive/)
 _archive/
 test-*.js
