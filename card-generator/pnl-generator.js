@@ -299,12 +299,12 @@ export function generatePnlCardHtml(data) {
 <head>
   <meta charset="UTF-8">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+SC:wght@400;600;700;900&family=Noto+Sans+JP:wght@400;600;700;900&family=Noto+Sans+KR:wght@400;600;700;900&display=swap');
     
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Inter', 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
       background: transparent;
       width: 1200px;
       height: 675px;
@@ -375,6 +375,7 @@ export function generatePnlCardHtml(data) {
     .token-symbol {
       font-size: 42px;
       font-weight: 800;
+      font-family: 'Inter', 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', sans-serif;
       background: ${chainInfo.gradient};
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
