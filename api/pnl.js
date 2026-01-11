@@ -62,6 +62,10 @@ async function sendPhoto(chatId, photoBuffer, caption = '', replyToMessageId = n
   return res.json();
 }
 
+async function deleteMessage(chatId, messageId) {
+  return api('deleteMessage', { chat_id: chatId, message_id: messageId });
+}
+
 // ============================================================
 // TOKEN LOOKUP
 // ============================================================
@@ -285,8 +289,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
   
-  // Send "searching" message
-  await sendMessage(chatId, `🔍 Looking up token on ${chainArg.toUpperCase()}...`, messageId);
+  // Send "searching" message (we'll delete it later)
+  const searchingMsg = await sendMessage(chatId, `🔍 Looking up token on ${chainArg.toUpperCase()}...`, messageId);
+  const searchingMsgId = searchingMsg?.result?.message_id;
   
   try {
     // Find token in specified chain
@@ -319,11 +324,21 @@ export default async function handler(req, res) {
       }
       
       await sendPhoto(chatId, imageBuffer, caption, messageId);
+      
+      // Delete the "searching" message
+      if (searchingMsgId) {
+        await deleteMessage(chatId, searchingMsgId).catch(() => {});
+      }
     } catch (imgErr) {
       console.error('Image generation error:', imgErr);
       // Fallback to text response
       const textResponse = generateTextResponse(data);
       await sendMessage(chatId, textResponse, messageId);
+      
+      // Delete the "searching" message
+      if (searchingMsgId) {
+        await deleteMessage(chatId, searchingMsgId).catch(() => {});
+      }
     }
     
     return res.status(200).json({ 

@@ -91,7 +91,7 @@ export function formatMult(mult) {
 }
 
 /**
- * Convert multiplier to percent string
+ * Convert multiplier to percent string (just the percent value)
  */
 export function multToPercent(mult) {
   if (mult >= 1) {
@@ -103,6 +103,23 @@ export function multToPercent(mult) {
     const pct = (1 - mult) * 100;
     return `-${Math.round(pct)}%`;
   }
+}
+
+/**
+ * Format duration between two timestamps
+ */
+export function formatDuration(startTime, endTime) {
+  const diffMs = endTime - startTime;
+  if (diffMs < 0) return '';
+  
+  const minutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) return `${days}d`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return '<1m';
 }
 
 /**
@@ -267,10 +284,15 @@ export function generatePnlCardHtml(data) {
     channelName = 'AI Alpha Signals',
     username = '@aialphasignals',
     logoUrl = null,
+    firstSeen = null,
+    peakTime = null,
   } = data;
 
   const chainInfo = getChainInfo(chain);
   const multTier = getMultTier(multiplier);
+  
+  // Calculate time to peak
+  const timeToPeak = (firstSeen && peakTime) ? formatDuration(firstSeen, peakTime) : null;
 
   return `<!DOCTYPE html>
 <html>
@@ -430,6 +452,11 @@ export function generatePnlCardHtml(data) {
       font-weight: 600;
       margin-top: 12px;
     }
+    
+    .percent-change .gray-text {
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 400;
+    }
 
     .footer {
       display: flex;
@@ -471,7 +498,7 @@ export function generatePnlCardHtml(data) {
       <div class="multiplier-section">
         <div class="multiplier-label">Peak Multiplier</div>
         <div class="multiplier-value">${formatMult(multiplier)}</div>
-        <div class="percent-change">${multToPercent(multiplier)}</div>
+        <div class="percent-change"><span class="gray-text">${multiplier >= 1 ? 'Gained' : 'Lost'}</span> ${multToPercent(multiplier)}${timeToPeak ? ` <span class="gray-text">in ${timeToPeak}</span>` : ''}</div>
       </div>
     </div>
     
